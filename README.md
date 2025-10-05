@@ -1,4 +1,4 @@
-# TableTap: AI-Powered Voice & Text Ordering System
+# TableAI: AI-Powered Voice & Text Ordering System
 
 This project is a fully serverless, AI-enhanced ordering system built on AWS. It allows users to order from a menu using natural language via text or voice, without needing to sign in.
 
