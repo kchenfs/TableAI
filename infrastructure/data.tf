@@ -9,9 +9,9 @@ data "aws_dynamodb_table" "orders" {
 
 data "aws_iam_policy_document" "cognito_unauth_policy_doc" {
   statement {
-    effect  = "Allow"
+    effect = "Allow"
     actions = [
-      "lex:RecognizeText", 
+      "lex:RecognizeText",
       "lex:RecognizeUtterance",
       "polly:SynthesizeSpeech" # Add this permission
     ]
