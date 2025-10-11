@@ -128,7 +128,7 @@ resource "aws_lexv2models_slot" "order_query_slot" {
       }
     }
   }
-  
+
   lifecycle {
     ignore_changes = [
       value_elicitation_setting
@@ -190,7 +190,7 @@ resource "aws_lexv2models_slot" "confirmation_slot" {
       }
     }
   }
-  
+
   lifecycle {
     ignore_changes = [
       value_elicitation_setting
@@ -211,7 +211,7 @@ resource "null_resource" "update_intent_with_all_details" {
   provisioner "local-exec" {
     interpreter = ["powershell", "-Command"]
     # This command now ONLY updates the slot priorities, which cannot be set on creation.
-    command     = "aws lexv2-models update-intent --bot-id ${aws_lexv2models_bot.tableai_bot.id} --bot-version DRAFT --locale-id ${aws_lexv2models_bot_locale.en_us.locale_id} --intent-id ${aws_lexv2models_intent.order_food.intent_id} --intent-name ${aws_lexv2models_intent.order_food.name} --slot-priorities file://${local_file.slot_priorities.filename}"
+    command = "aws lexv2-models update-intent --bot-id ${aws_lexv2models_bot.tableai_bot.id} --bot-version DRAFT --locale-id ${aws_lexv2models_bot_locale.en_us.locale_id} --intent-id ${aws_lexv2models_intent.order_food.intent_id} --intent-name ${aws_lexv2models_intent.order_food.name} --slot-priorities file://${local_file.slot_priorities.filename}"
   }
 }
 
@@ -262,7 +262,7 @@ resource "aws_lambda_permission" "allow_lex" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.lex_fulfillment_handler.function_name
   principal     = "lexv2.amazonaws.com"
-  source_arn = "arn:aws:lex:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:bot-alias/${aws_lexv2models_bot.tableai_bot.id}/*"
+  source_arn    = "arn:aws:lex:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:bot-alias/${aws_lexv2models_bot.tableai_bot.id}/*"
 }
 
 ######################################

@@ -1,3 +1,5 @@
+# /src/app.py
+
 import json
 import boto3
 import os
@@ -20,16 +22,13 @@ def lambda_handler(event, context):
     Main handler that routes the request based on the invocation source.
     """
     print(f"Received event: {json.dumps(event)}")
-
-
     invocation_source = event.get('invocationSource')
-    print(f"Invocation source: {invocation_source}")
+    
     if invocation_source == 'DialogCodeHook':
         return handle_dialog(event)
     elif invocation_source == 'FulfillmentCodeHook':
         return fulfill_order(event)
     else:
-        # Fallback for safety
         return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I'm not sure how to handle that."})
 
 def handle_dialog(event):
@@ -40,12 +39,15 @@ def handle_dialog(event):
     slots = intent['slots']
     session_attrs = event['sessionState'].get('sessionAttributes', {})
 
-    # 1. If OrderQuery is provided, parse it and ask about drinks
+    # 1. If the main food order hasn't been provided yet, ask for it.
+    if not slots.get('OrderQuery'):
+        return elicit_slot(event, 'OrderQuery', "Certainly, what would you like to order?")
+
+    # 2. If OrderQuery IS provided, parse it and ask about drinks
     if slots.get('OrderQuery') and not session_attrs.get('parsedOrder'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
         
         try:
-            # Fetch menu and call Bedrock to parse the food order
             menu_items = menu_table.scan().get('Items', [])
             menu_json_string = json.dumps(menu_items, cls=DecimalEncoder)
             
@@ -58,20 +60,18 @@ Menu: {menu_json_string}
             parsed_order = invoke_bedrock(prompt)
             session_attrs['parsedOrder'] = json.dumps(parsed_order)
             
-            # Elicit the DrinkQuery slot
             return elicit_slot(event, 'DrinkQuery', "Great, I've got that. Would you like anything to drink with your order?")
 
         except Exception as e:
             print(f"Error parsing food order with Bedrock: {e}")
             return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you please try again?"})
 
-    # 2. If DrinkQuery is provided, process it and ask for confirmation
+    # 3. If DrinkQuery is provided, process it and ask for confirmation
     if slots.get('DrinkQuery') and not slots.get('Confirmation'):
         drink_text = slots['DrinkQuery']['value']['interpretedValue'].lower()
         parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
         order_items = parsed_order.get('order_items', [])
         
-        # Simple logic for drinks. Could also use Bedrock for more complex parsing.
         negatives = ['no', 'none', 'no thanks', 'not today', 'nothing']
         if drink_text not in negatives:
             order_items.append({'item_name': drink_text.strip(), 'quantity': 1, 'modifiers': []})
@@ -79,7 +79,6 @@ Menu: {menu_json_string}
         parsed_order['order_items'] = order_items
         session_attrs['parsedOrder'] = json.dumps(parsed_order)
         
-        # Create a summary message
         summary = "Okay, here is what I have for your order: "
         item_strings = [f"{item['quantity']} {item['item_name']}" for item in order_items]
         summary += ", ".join(item_strings)
@@ -87,17 +86,14 @@ Menu: {menu_json_string}
         
         return elicit_slot(event, 'Confirmation', summary)
 
-    # 3. If Confirmation is provided, delegate back to Lex or reset
+    # 4. If Confirmation is provided, delegate back to Lex or reset
     if slots.get('Confirmation'):
         confirmation_value = slots['Confirmation']['value']['interpretedValue']
         if confirmation_value.lower() == 'yes':
-            # The dialog is complete and correct. Let Lex move to fulfillment.
             return delegate(event, session_attrs)
         else:
-            # Order is incorrect. Reset and start over.
             return elicit_slot(event, 'OrderQuery', "My apologies. Let's start over. What would you like to order?", reset=True)
 
-    # Default fallback: let Lex decide the next step
     return delegate(event, session_attrs)
 
 def fulfill_order(event):
@@ -109,8 +105,6 @@ def fulfill_order(event):
         final_order_str = session_attrs.get('parsedOrder', '{}')
         final_order = json.loads(final_order_str)
         
-        # In a real application, you would save this final_order to the orders_table.
-        # For example: orders_table.put_item(Item={'orderId': context.aws_request_id, 'order': final_order})
         print(f"Fulfilling final order: {final_order_str}")
         
         summary = "Thank you! Your order has been placed. Here is a summary: "
@@ -124,20 +118,34 @@ def fulfill_order(event):
         return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I'm sorry, I encountered an error while finalizing your order. Please try again."})
 
 def invoke_bedrock(prompt):
-    """Helper function to call Bedrock and parse the response."""
-    claude_body = json.dumps({
-        "prompt": f"\n\nHuman: {prompt}\n\nAssistant:",
-        "max_tokens_to_sample": 1000,
+    """
+    Helper function to call Bedrock.
+    NOTE: Updated for Claude 3 Messages API format.
+    """
+    # Create the body for the new Messages API
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 1000,
         "temperature": 0.1,
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": prompt}]
+            }
+        ]
     })
+    
     response = bedrock_client.invoke_model(
-        body=claude_body,
-        modelId='anthropic.claude-instant-v1',
+        body=body,
+        modelId='anthropic.claude-3-haiku-20240307-v1:0', # Updated model ID
         accept='application/json',
         contentType='application/json'
     )
+    
     response_body = json.loads(response.get('body').read())
-    completion = response_body.get('completion', '{}').strip()
+    
+    # The completion is in a different location in the new response structure
+    completion = response_body.get('content')[0].get('text')
     return json.loads(completion)
 
 # --- Lex V2 Response Helpers ---
@@ -147,7 +155,6 @@ def elicit_slot(event, slot_to_elicit, message_content, reset=False):
     session_attrs = event['sessionState'].get('sessionAttributes', {})
     
     if reset:
-        # Clear all slots and session attributes to start over
         intent['slots'] = { "OrderQuery": None, "DrinkQuery": None, "Confirmation": None }
         session_attrs = {}
 

@@ -1,4 +1,4 @@
-# terraform/lambda.tf
+# /infrastructure/lambda.tf
 
 # Data sources to get current region for ARNs and context
 data "aws_region" "current" {}
@@ -58,13 +58,11 @@ resource "aws_iam_policy" "lex_fulfillment_policy" {
           data.aws_dynamodb_table.orders.arn
         ]
       },
-      # IMPORTANT: Bedrock models are not yet in ca-central-1.
-      # We explicitly grant permission to the us-east-1 endpoint for model invocation.
-      # Your Lambda code will need to specify "us-east-1" when creating the Bedrock client.
+      # Grant permission ONLY to the specific Claude 3 Haiku model.
       {
         Action   = "bedrock:InvokeModel"
         Effect   = "Allow"
-        Resource = "arn:aws:bedrock:ca-central-1::foundation-model/*"
+        Resource = "arn:aws:bedrock:ca-central-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
       }
     ]
   })
@@ -84,11 +82,11 @@ resource "aws_iam_role_policy_attachment" "lex_fulfillment_attach" {
 resource "aws_lambda_function" "lex_fulfillment_handler" {
   function_name = "TableAILexFulfillmentHandler"
   role          = aws_iam_role.lex_fulfillment_role.arn
-  handler       = "app.lambda_handler" # File is app.py, function is lambda_handler
+  handler       = "app.lambda_handler"
   runtime       = "python3.13"
-  timeout       = 30 # Increased timeout for potential cold starts and AI model calls
+  timeout       = 30
 
-  # Assumes your code is in a /src folder at the root of your project
+  # Use a placeholder package for initial creation. CI/CD will deploy the real code.
   filename         = "../src/lambda_fulfillment.zip"
   source_code_hash = filebase64sha256("../src/lambda_fulfillment.zip")
 
@@ -96,7 +94,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
     variables = {
       MENU_TABLE_NAME   = data.aws_dynamodb_table.menu.name
       ORDERS_TABLE_NAME = data.aws_dynamodb_table.orders.name
-      BEDROCK_REGION    = "ca-central-1" # Pass the Bedrock region to the code
+      BEDROCK_REGION    = "ca-central-1"
     }
   }
 
