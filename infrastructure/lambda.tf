@@ -64,7 +64,7 @@ resource "aws_iam_policy" "lex_fulfillment_policy" {
       {
         Action   = "bedrock:InvokeModel"
         Effect   = "Allow"
-        Resource = "arn:aws:bedrock:us-east-1::foundation-model/*"
+        Resource = "arn:aws:bedrock:ca-central-1::foundation-model/*"
       }
     ]
   })
@@ -85,7 +85,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
   function_name = "TableAILexFulfillmentHandler"
   role          = aws_iam_role.lex_fulfillment_role.arn
   handler       = "app.lambda_handler" # File is app.py, function is lambda_handler
-  runtime       = "python3.11"
+  runtime       = "python3.13"
   timeout       = 30 # Increased timeout for potential cold starts and AI model calls
 
   # Assumes your code is in a /src folder at the root of your project
@@ -96,7 +96,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
     variables = {
       MENU_TABLE_NAME   = data.aws_dynamodb_table.menu.name
       ORDERS_TABLE_NAME = data.aws_dynamodb_table.orders.name
-      BEDROCK_REGION    = "us-east-1" # Pass the Bedrock region to the code
+      BEDROCK_REGION    = "ca-central-1" # Pass the Bedrock region to the code
     }
   }
 
