@@ -19,6 +19,9 @@ def lambda_handler(event, context):
     """
     Main handler that routes the request based on the invocation source.
     """
+    print(f"Received event: {json.dumps(event)}")
+
+
     invocation_source = event.get('invocationSource')
     
     if invocation_source == 'DialogCodeHook':

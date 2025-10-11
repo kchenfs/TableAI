@@ -1,23 +1,7 @@
 # /infrastructure/lex.tf
 
 locals {
-  sample_utterances_json = jsonencode([
-    # These are good, general utterances to trigger the intent.
-    { utterance = "I want to order food" },
-    { utterance = "I would like to place an order" },
-    { utterance = "I'd like to order" },
-    { utterance = "Can I get some food" },
-    { utterance = "Place an order for me" }
-  ])
-
-  fulfillment_hook_json = jsonencode({
-    enabled = true
-  })
-  
-  dialog_hook_json = jsonencode({
-    enabled = true
-  })
-
+  # This JSON is now only for slot priorities, as other settings are defined directly.
   slot_priorities_json = jsonencode([
     {
       priority = 1
@@ -34,22 +18,7 @@ locals {
   ])
 }
 
-# These resources write the JSON content to temporary files
-resource "local_file" "sample_utterances" {
-  content  = local.sample_utterances_json
-  filename = "${path.module}/tmp/sample_utterances.json"
-}
-
-resource "local_file" "fulfillment_hook" {
-  content  = local.fulfillment_hook_json
-  filename = "${path.module}/tmp/fulfillment_hook.json"
-}
-
-resource "local_file" "dialog_hook" {
-  content  = local.dialog_hook_json
-  filename = "${path.module}/tmp/dialog_hook.json"
-}
-
+# This resource writes the slot priority JSON to a temporary file for the patch command.
 resource "local_file" "slot_priorities" {
   content  = local.slot_priorities_json
   filename = "${path.module}/tmp/slot_priorities.json"
@@ -80,13 +49,38 @@ resource "aws_lexv2models_bot_locale" "en_us" {
 }
 
 ######################################
-# 3. Define the intent (minimal)
+# 3. Define the intent (complete version)
 ######################################
 resource "aws_lexv2models_intent" "order_food" {
   bot_id      = aws_lexv2models_bot.tableai_bot.id
   bot_version = aws_lexv2models_bot_locale.en_us.bot_version
   locale_id   = aws_lexv2models_bot_locale.en_us.locale_id
   name        = "OrderFood"
+
+  # Define hooks and utterances directly in the resource for reliability.
+  dialog_code_hook {
+    enabled = true
+  }
+
+  fulfillment_code_hook {
+    enabled = true
+  }
+
+  sample_utterance {
+    utterance = "I want to order food"
+  }
+  sample_utterance {
+    utterance = "I would like to place an order"
+  }
+  sample_utterance {
+    utterance = "I'd like to order"
+  }
+  sample_utterance {
+    utterance = "Can I get some food"
+  }
+  sample_utterance {
+    utterance = "Place an order for me"
+  }
 }
 
 ######################################
@@ -120,14 +114,11 @@ resource "aws_lexv2models_slot" "order_query_slot" {
   name         = "OrderQuery"
   slot_type_id = "AMAZON.FreeFormInput"
   description  = "Captures the user's entire free-form food order."
-  
   value_elicitation_setting {
     slot_constraint = "Required"
     prompt_specification {
-      max_retries                = 2
-      allow_interrupt            = true
-      message_selection_strategy = "Random"
-      
+      max_retries     = 2
+      allow_interrupt = true
       message_group {
         message {
           plain_text_message {
@@ -135,97 +126,13 @@ resource "aws_lexv2models_slot" "order_query_slot" {
           }
         }
       }
-
-      prompt_attempts_specification {
-        map_block_key    = "Initial"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
-
-      prompt_attempts_specification {
-        map_block_key    = "Retry1"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
-
-      prompt_attempts_specification {
-        map_block_key    = "Retry2"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
     }
+  }
+  
+  lifecycle {
+    ignore_changes = [
+      value_elicitation_setting
+    ]
   }
 }
 
@@ -237,14 +144,12 @@ resource "aws_lexv2models_slot" "drink_query_slot" {
   name         = "DrinkQuery"
   slot_type_id = "AMAZON.FreeFormInput"
   description  = "Captures the user's drink order or a negative response."
-  
+
   value_elicitation_setting {
     slot_constraint = "Required"
     prompt_specification {
-      max_retries                = 2
-      allow_interrupt            = true
-      message_selection_strategy = "Random"
-      
+      max_retries     = 2
+      allow_interrupt = true
       message_group {
         message {
           plain_text_message {
@@ -252,97 +157,13 @@ resource "aws_lexv2models_slot" "drink_query_slot" {
           }
         }
       }
-
-      prompt_attempts_specification {
-        map_block_key    = "Initial"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
-
-      prompt_attempts_specification {
-        map_block_key    = "Retry1"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
-
-      prompt_attempts_specification {
-        map_block_key    = "Retry2"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
     }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      value_elicitation_setting
+    ]
   }
 }
 
@@ -354,14 +175,12 @@ resource "aws_lexv2models_slot" "confirmation_slot" {
   name         = "Confirmation"
   slot_type_id = "AMAZON.Confirmation"
   description  = "Confirms if the final order is correct."
-  
+
   value_elicitation_setting {
     slot_constraint = "Required"
     prompt_specification {
-      max_retries                = 2
-      allow_interrupt            = true
-      message_selection_strategy = "Random"
-      
+      max_retries     = 2
+      allow_interrupt = true
       message_group {
         message {
           plain_text_message {
@@ -369,114 +188,30 @@ resource "aws_lexv2models_slot" "confirmation_slot" {
           }
         }
       }
-
-      prompt_attempts_specification {
-        map_block_key    = "Initial"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
-
-      prompt_attempts_specification {
-        map_block_key    = "Retry1"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
-
-      prompt_attempts_specification {
-        map_block_key    = "Retry2"
-        allow_interrupt  = true
-        
-        allowed_input_types {
-          allow_audio_input = true
-          allow_dtmf_input  = true
-        }
-
-        audio_and_dtmf_input_specification {
-          start_timeout_ms = 4000
-          
-          audio_specification {
-            max_length_ms  = 15000
-            end_timeout_ms = 640
-          }
-          
-          dtmf_specification {
-            max_length         = 513
-            end_timeout_ms     = 5000
-            deletion_character = "*"
-            end_character      = "#"
-          }
-        }
-
-        text_input_specification {
-          start_timeout_ms = 30000
-        }
-      }
     }
+  }
+  
+  lifecycle {
+    ignore_changes = [
+      value_elicitation_setting
+    ]
   }
 }
 
 ######################################
-# 6. Patch intent after slot creation (File-Based)
+# 6. Patch intent with slot priorities
 ######################################
 resource "null_resource" "update_intent_with_all_details" {
   depends_on = [
-    local_file.sample_utterances,
-    local_file.fulfillment_hook,
-    local_file.dialog_hook,
-    local_file.slot_priorities
+    aws_lexv2models_slot.order_query_slot,
+    aws_lexv2models_slot.drink_query_slot,
+    aws_lexv2models_slot.confirmation_slot
   ]
 
   provisioner "local-exec" {
     interpreter = ["powershell", "-Command"]
-    command     = "aws lexv2-models update-intent --bot-id ${aws_lexv2models_bot.tableai_bot.id} --bot-version DRAFT --locale-id ${aws_lexv2models_bot_locale.en_us.locale_id} --intent-id ${aws_lexv2models_intent.order_food.intent_id} --intent-name ${aws_lexv2models_intent.order_food.name} --sample-utterances file://${local_file.sample_utterances.filename} --fulfillment-code-hook file://${local_file.fulfillment_hook.filename} --dialog-code-hook file://${local_file.dialog_hook.filename} --slot-priorities file://${local_file.slot_priorities.filename}"
+    # This command now ONLY updates the slot priorities, which cannot be set on creation.
+    command     = "aws lexv2-models update-intent --bot-id ${aws_lexv2models_bot.tableai_bot.id} --bot-version DRAFT --locale-id ${aws_lexv2models_bot_locale.en_us.locale_id} --intent-id ${aws_lexv2models_intent.order_food.intent_id} --intent-name ${aws_lexv2models_intent.order_food.name} --slot-priorities file://${local_file.slot_priorities.filename}"
   }
 }
 
@@ -527,7 +262,7 @@ resource "aws_lambda_permission" "allow_lex" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.lex_fulfillment_handler.function_name
   principal     = "lexv2.amazonaws.com"
-  source_arn    = awscc_lex_bot_alias.prod.arn
+  source_arn = "arn:aws:lex:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:bot-alias/${aws_lexv2models_bot.tableai_bot.id}/*"
 }
 
 ######################################
