@@ -24,7 +24,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt -t ./dist
+        run: pip install -r src/requirements.txt -t ./dist
 
       - name: Prepare deployment package
         run: cp src/*.py ./dist/
