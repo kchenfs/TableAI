@@ -1,0 +1,51 @@
+# .github/workflows/deploy-backend.yml
+
+name: Deploy Code Backend Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt -t ./dist
+
+      - name: Prepare deployment package
+        run: cp src/*.py ./dist/
+      
+      # THIS IS A NEW STEP: Create a single .zip file from the dist directory
+      - name: Create Zip File
+        run: |
+          cd dist
+          zip -r ../deployment_package.zip .
+          cd ..
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_FOR_OIDC_ARN }}
+          aws-region: ca-central-1
+
+      # THIS IS THE CHANGE: Use the AWS CLI to update ONLY the function code.
+      - name: Deploy WebhookIngestor Lambda Code
+        run: |
+          aws lambda update-function-code \
+            --function-name TableAILexFulfillmentHandler \
+            --zip-file fileb://deployment_package.zip
+

@@ -3,23 +3,40 @@
 locals {
   sample_utterances_json = jsonencode([
     { utterance = "I want to order food" },
-    { utterance = "I would like to place an order" }
+    { utterance = "I would like to place an order" },
+    { utterance = "Can I get a {OrderQuery}" },
+    { utterance = "I want a {OrderQuery} and a {DrinkQuery}" },
+    { utterance = "I'd like to order a {OrderQuery}" },
+    { utterance = "{OrderQuery} and {DrinkQuery} please" }
   ])
 
   fulfillment_hook_json = jsonencode({
     enabled = true
   })
+  
+  # NEW: Configuration for the dialog code hook
+  dialog_hook_json = jsonencode({
+    enabled = true
+  })
 
+  # UPDATED: Slot priorities including the new slots
   slot_priorities_json = jsonencode([
     {
       priority = 1
-      # Use the correct .slot_id attribute for the AWS API
       slotId   = aws_lexv2models_slot.order_query_slot.slot_id
+    },
+    {
+      priority = 2
+      slotId   = aws_lexv2models_slot.drink_query_slot.slot_id
+    },
+    {
+      priority = 3
+      slotId   = aws_lexv2models_slot.confirmation_slot.slot_id
     }
   ])
 }
 
-# These resources write the JSON content to temporary files to avoid shell parsing issues.
+# These resources write the JSON content to temporary files
 resource "local_file" "sample_utterances" {
   content  = local.sample_utterances_json
   filename = "${path.module}/tmp/sample_utterances.json"
@@ -28,6 +45,12 @@ resource "local_file" "sample_utterances" {
 resource "local_file" "fulfillment_hook" {
   content  = local.fulfillment_hook_json
   filename = "${path.module}/tmp/fulfillment_hook.json"
+}
+
+# NEW: Local file for the dialog hook JSON
+resource "local_file" "dialog_hook" {
+  content  = local.dialog_hook_json
+  filename = "${path.module}/tmp/dialog_hook.json"
 }
 
 resource "local_file" "slot_priorities" {
@@ -47,7 +70,7 @@ resource "aws_lexv2models_bot" "tableai_bot" {
   }
 
   idle_session_ttl_in_seconds = 300
-  type                        = "Bot"
+  [cite_start]type                        = "Bot" [cite: 1]
 }
 
 ######################################
@@ -61,27 +84,15 @@ resource "aws_lexv2models_bot_locale" "en_us" {
 }
 
 ######################################
-# 3. Define the intent (no slot priorities yet)
+# 3. Define the intent (minimal)
 ######################################
 resource "aws_lexv2models_intent" "order_food" {
   bot_id      = aws_lexv2models_bot.tableai_bot.id
   bot_version = aws_lexv2models_bot_locale.en_us.bot_version
   locale_id   = aws_lexv2models_bot_locale.en_us.locale_id
   name        = "OrderFood"
-
-  sample_utterance {
-    utterance = "I want to order food"
-  }
-
-  sample_utterance {
-    utterance = "I would like to place an order"
-  }
-
-  fulfillment_code_hook {
-    enabled = true
-  }
-
-  # No slot_priorities here — will be patched after slot creation
+  # Note: Details like utterances and hooks are now patched later
+  # to manage dependencies.
 }
 
 ######################################
@@ -105,38 +116,75 @@ resource "aws_lexv2models_slot_type" "order_query_slot_type" {
 }
 
 ######################################
-# 5. Define the slot
+# 5. Define the slots
 ######################################
 resource "aws_lexv2models_slot" "order_query_slot" {
-  bot_id      = aws_lexv2models_bot.tableai_bot.id
-  bot_version = "DRAFT"
-  intent_id   = aws_lexv2models_intent.order_food.intent_id
-  locale_id   = aws_lexv2models_bot_locale.en_us.locale_id
-
-  name         = "OrderQuery"
-  slot_type_id = "AMAZON.FreeFormInput"
-  description  = "Captures the user's entire free-form order."
-
+  bot_id       = aws_lexv2models_bot.tableai_bot.id
+  bot_version  = "DRAFT"
+  intent_id    = aws_lexv2models_intent.order_food.intent_id
+  locale_id    = aws_lexv2models_bot_locale.en_us.locale_id
+  [cite_start]name         = "OrderQuery" [cite: 1]
+  [cite_start]slot_type_id = "AMAZON.FreeFormInput" [cite: 1]
+  description  = "Captures the user's entire free-form food order."
   value_elicitation_setting {
-    slot_constraint = "Required"
-
+    [cite_start]slot_constraint = "Required" [cite: 1]
     prompt_specification {
       max_retries                = 2
       allow_interrupt            = true
-      message_selection_strategy = "Random"
-
       message_group {
         message {
           plain_text_message {
-            value = "Certainly, what would you like to order?"
+            [cite_start]value = "Certainly, what would you like to order?" [cite: 1]
           }
         }
       }
+    }
+  }
+}
 
+# NEW: Slot to capture the drink order
+resource "aws_lexv2models_slot" "drink_query_slot" {
+  bot_id       = aws_lexv2models_bot.tableai_bot.id
+  bot_version  = "DRAFT"
+  intent_id    = aws_lexv2models_intent.order_food.intent_id
+  locale_id    = aws_lexv2models_bot_locale.en_us.locale_id
+  name         = "DrinkQuery"
+  slot_type_id = "AMAZON.FreeFormInput"
+  description  = "Captures the user's drink order or a negative response."
+  value_elicitation_setting {
+    slot_constraint = "Required"
+    prompt_specification {
+      max_retries = 2
+      allow_interrupt = true
       message_group {
         message {
           plain_text_message {
-            value = "I can help with that. What are we getting for you today?"
+            value = "Would you like anything to drink?"
+          }
+        }
+      }
+    }
+  }
+}
+
+# NEW: Slot to confirm the final order
+resource "aws_lexv2models_slot" "confirmation_slot" {
+  bot_id       = aws_lexv2models_bot.tableai_bot.id
+  bot_version  = "DRAFT"
+  intent_id    = aws_lexv2models_intent.order_food.intent_id
+  locale_id    = aws_lexv2models_bot_locale.en_us.locale_id
+  name         = "Confirmation"
+  slot_type_id = "AMAZON.Confirmation"
+  description  = "Confirms if the final order is correct."
+  value_elicitation_setting {
+    slot_constraint = "Required"
+    prompt_specification {
+      max_retries = 2
+      allow_interrupt = true
+      message_group {
+        message {
+          plain_text_message {
+            value = "Is that correct?"
           }
         }
       }
@@ -145,24 +193,22 @@ resource "aws_lexv2models_slot" "order_query_slot" {
 }
 
 ######################################
-# 6. Patch slot priority after creation (File-Based)
+# 6. Patch intent after slot creation (File-Based)
 ######################################
-resource "null_resource" "update_intent_slot_priority" {
+resource "null_resource" "update_intent_with_all_details" {
   depends_on = [
-    # Ensure the JSON files are created before this runs
     local_file.sample_utterances,
     local_file.fulfillment_hook,
+    local_file.dialog_hook,
     local_file.slot_priorities
   ]
 
   provisioner "local-exec" {
     interpreter = ["powershell", "-Command"]
-
-    # This command now reads parameters from files to avoid shell parsing errors.
-    command = "aws lexv2-models update-intent --bot-id ${aws_lexv2models_bot.tableai_bot.id} --bot-version DRAFT --locale-id ${aws_lexv2models_bot_locale.en_us.locale_id} --intent-id ${aws_lexv2models_intent.order_food.intent_id} --intent-name ${aws_lexv2models_intent.order_food.name} --sample-utterances file://${local_file.sample_utterances.filename} --fulfillment-code-hook file://${local_file.fulfillment_hook.filename} --slot-priorities file://${local_file.slot_priorities.filename}"
+    # UPDATED: This command now includes the dialog_code_hook
+    command = "aws lexv2-models update-intent --bot-id ${aws_lexv2models_bot.tableai_bot.id} --bot-version DRAFT --locale-id ${aws_lexv2models_bot_locale.en_us.locale_id} --intent-id ${aws_lexv2models_intent.order_food.intent_id} --intent-name ${aws_lexv2models_intent.order_food.name} --sample-utterances file://${local_file.sample_utterances.filename} --fulfillment-code-hook file://${local_file.fulfillment_hook.filename} --dialog-code-hook file://${local_file.dialog_hook.filename} --slot-priorities file://${local_file.slot_priorities.filename}"
   }
 }
-
 
 ######################################
 # 7. Create a bot version (builds after intent patch)
@@ -177,7 +223,7 @@ resource "aws_lexv2models_bot_version" "v1" {
   }
 
   depends_on = [
-    null_resource.update_intent_slot_priority
+    null_resource.update_intent_with_all_details
   ]
 }
 
@@ -225,6 +271,14 @@ output "intent_id" {
   value = aws_lexv2models_intent.order_food.intent_id
 }
 
-output "slot_id" {
+output "order_query_slot_id" {
   value = aws_lexv2models_slot.order_query_slot.slot_id
+}
+
+output "drink_query_slot_id" {
+  value = aws_lexv2models_slot.drink_query_slot.slot_id
+}
+
+output "confirmation_slot_id" {
+  value = aws_lexv2models_slot.confirmation_slot.slot_id
 }
