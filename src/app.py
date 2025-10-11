@@ -23,7 +23,7 @@ def lambda_handler(event, context):
 
 
     invocation_source = event.get('invocationSource')
-    
+    print(f"Invocation source: {invocation_source}")
     if invocation_source == 'DialogCodeHook':
         return handle_dialog(event)
     elif invocation_source == 'FulfillmentCodeHook':
