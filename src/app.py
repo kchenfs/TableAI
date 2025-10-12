@@ -42,60 +42,51 @@ def handle_dialog(event):
     # 1. Check if the user has responded to the confirmation prompt
     confirmation_state = intent.get('confirmationState')
     if confirmation_state == 'Confirmed':
-        # Let Lex know it's ready for fulfillment
         return delegate(event, session_attrs)
     elif confirmation_state == 'Denied':
-        # User said "no," so reset slots and start over
         return elicit_slot(event, 'OrderQuery', "My apologies. Let's start over. What would you like to order?", reset=True)
 
     # 2. If the main food order hasn't been provided yet, ask for it.
     if not slots.get('OrderQuery'):
         return elicit_slot(event, 'OrderQuery', "Certainly, what would you like to order?")
 
-    # 3. If OrderQuery IS provided, parse it and ask about drinks
-    if slots.get('OrderQuery') and not session_attrs.get('parsedOrder'):
-        raw_order_text = slots['OrderQuery']['value']['interpretedValue']
+    # 3. If OrderQuery is provided but DrinkQuery is not, ask for the drink.
+    if slots.get('OrderQuery') and not slots.get('DrinkQuery'):
+        return elicit_slot(event, 'DrinkQuery', "Great, I've got that. Would you like anything to drink with your order?")
+
+    # 4. If BOTH OrderQuery and DrinkQuery are provided, parse the combined order with Bedrock
+    if slots.get('OrderQuery') and slots.get('DrinkQuery'):
+        raw_food_text = slots['OrderQuery']['value']['interpretedValue']
+        raw_drink_text = slots['DrinkQuery']['value']['interpretedValue']
         
         try:
             menu_items = menu_table.scan().get('Items', [])
             menu_json_string = json.dumps(menu_items, cls=DecimalEncoder)
             
             prompt = f"""
-You are a helpful restaurant order-taking assistant. A customer has made the following request: "{raw_order_text}".
-Based on the menu provided below, parse the customer's request and extract the food items, quantities, and any specified modifiers. If a quantity is not specified for an item, assume the quantity is 1. Your response must be only a valid JSON object with a single key 'order_items' which is a list of objects. If an item is not on the menu, do not include it.
+You are a helpful restaurant order-taking assistant. A customer has made the following food request: "{raw_food_text}" and the following drink request: "{raw_drink_text}".
+Based on the menu provided below, parse the customer's entire request and extract all food and drink items, quantities, and any specified modifiers. If a quantity is not specified for an item, assume the quantity is 1. Your response must be only a valid JSON object with a single key 'order_items' which is a list of objects. If an item (food or drink) is not on the menu, do not include it. If the drink request is negative (e.g., "no", "nothing"), do not include any drinks.
 
 Menu: {menu_json_string}
 """
             parsed_order = invoke_bedrock(prompt)
             session_attrs['parsedOrder'] = json.dumps(parsed_order)
             
-            # Elicit the next slot (DrinkQuery)
-            return elicit_slot(event, 'DrinkQuery', "Great, I've got that. Would you like anything to drink with your order?")
+            # Check if Bedrock returned any items. If not, the order was invalid.
+            if not parsed_order.get('order_items'):
+                return elicit_slot(event, 'OrderQuery', "I'm sorry, I couldn't find any of those items on the menu. Let's try again. What would you like to order?", reset=True)
+            
+            order_items = parsed_order.get('order_items', [])
+            summary = "Okay, here is what I have for your order: "
+            item_strings = [f"{item['quantity']} {item['item_name']}" for item in order_items]
+            summary += ", ".join(item_strings)
+            summary += ". Is that correct?"
+            
+            return confirm_intent(event, summary)
 
         except Exception as e:
-            print(f"Error parsing food order with Bedrock: {e}")
+            print(f"Error parsing combined order with Bedrock: {e}")
             return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you please try again?"})
-
-    # 4. If DrinkQuery is provided, process it and trigger the confirmation prompt
-    if slots.get('DrinkQuery'):
-        drink_text = slots['DrinkQuery']['value']['interpretedValue'].lower()
-        parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
-        order_items = parsed_order.get('order_items', [])
-        
-        negatives = ['no', 'none', 'no thanks', 'not today', 'nothing']
-        if drink_text not in negatives:
-            order_items.append({'item_name': drink_text.strip(), 'quantity': 1, 'modifiers': []})
-        
-        parsed_order['order_items'] = order_items
-        session_attrs['parsedOrder'] = json.dumps(parsed_order)
-        
-        summary = "Okay, here is what I have for your order: "
-        item_strings = [f"{item['quantity']} {item['item_name']}" for item in order_items]
-        summary += ", ".join(item_strings)
-        summary += ". Is that correct?"
-        
-        # Use the new helper to ask for confirmation
-        return confirm_intent(event, summary)
 
     # Fallback
     return delegate(event, session_attrs)
