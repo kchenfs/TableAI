@@ -11,16 +11,47 @@ menu_table = dynamodb.Table(os.environ['MENU_TABLE_NAME'])
 orders_table = dynamodb.Table(os.environ['ORDERS_TABLE_NAME'])
 bedrock_client = boto3.client('bedrock-runtime', region_name=os.environ['BEDROCK_REGION'])
 
+# Global cache for the menu to reduce DynamoDB reads
+menu_cache = None
+# In-memory representation of the menu for easy lookups
+menu_data_cache = None
+
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, decimal.Decimal):
-            return float(o)
+            # Convert Decimal to float or int
+            if o % 1 == 0:
+                return int(o)
+            else:
+                return float(o)
         return super(DecimalEncoder, self).default(o)
 
+def get_menu(force_refresh=False):
+    """
+    Fetches the menu from DynamoDB and caches it.
+    Returns both the JSON string for Bedrock and a Python dict for logic.
+    """
+    global menu_cache, menu_data_cache
+    if menu_cache is None or force_refresh:
+        print("Cache miss or force refresh. Fetching menu from DynamoDB.")
+        # Boto3's DynamoDB resource automatically deserializes the JSON-like structure
+        response = menu_table.scan()
+        menu_data_cache = response.get('Items', [])
+        menu_cache = json.dumps(menu_data_cache, cls=DecimalEncoder)
+    else:
+        print("Cache hit. Using cached menu.")
+    return menu_cache, menu_data_cache
+
+def find_item_in_menu(item_name):
+    """Helper to find an item's full data from the cached menu."""
+    _, menu_data = get_menu()
+    for item in menu_data:
+        # Case-insensitive search for robustness
+        if item.get('ItemName', '').lower() == item_name.lower():
+            return item
+    return None
+
 def lambda_handler(event, context):
-    """
-    Main handler that routes the request based on the invocation source.
-    """
     print(f"Received event: {json.dumps(event)}")
     invocation_source = event.get('invocationSource')
     
@@ -32,114 +63,140 @@ def lambda_handler(event, context):
         return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I'm not sure how to handle that."})
 
 def handle_dialog(event):
-    """
-    Manages the conversation flow, validates input, and uses the built-in confirmation.
-    """
     intent = event['sessionState']['intent']
     slots = intent['slots']
     session_attrs = event['sessionState'].get('sessionAttributes', {})
     
-    # 1. Check if the user has responded to the confirmation prompt
+    # --- Main Logic Flow ---
+
+    # 1. Handle the response to the final confirmation prompt
     confirmation_state = intent.get('confirmationState')
     if confirmation_state == 'Confirmed':
         return delegate(event, session_attrs)
-    elif confirmation_state == 'Denied':
+    if confirmation_state == 'Denied':
         return elicit_slot(event, 'OrderQuery', "My apologies. Let's start over. What would you like to order?", reset=True)
 
-    # 2. If the main food order hasn't been provided yet, ask for it.
+    # 2. Handle a user providing a choice for a complex item
+    if session_attrs.get('currentItemToConfigure'):
+        # This is where you would build the logic to handle the user's response
+        # from the OptionChoice slot and check for more required options.
+        # For simplicity in this example, we will assume one choice is enough.
+        
+        # ( Placeholder for complex item configuration logic )
+        
+        # After configuring, clear the state and move on
+        session_attrs.pop('currentItemToConfigure', None)
+        return elicit_slot(event, 'DrinkQuery', "Got it. Anything to drink with that?")
+
+    # 3. Elicit the first slot if the conversation has just started
     if not slots.get('OrderQuery'):
         return elicit_slot(event, 'OrderQuery', "Certainly, what would you like to order?")
 
-    # 3. If OrderQuery is provided but DrinkQuery is not, ask for the drink.
-    if slots.get('OrderQuery') and not slots.get('DrinkQuery'):
-        return elicit_slot(event, 'DrinkQuery', "Great, I've got that. Would you like anything to drink with your order?")
-
-    # 4. If BOTH OrderQuery and DrinkQuery are provided, parse the combined order with Bedrock
-    if slots.get('OrderQuery') and slots.get('DrinkQuery'):
-        raw_food_text = slots['OrderQuery']['value']['interpretedValue']
-        raw_drink_text = slots['DrinkQuery']['value']['interpretedValue']
+    # 4. If OrderQuery is filled, call Bedrock to parse everything.
+    if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
+        raw_order_text = slots['OrderQuery']['value']['interpretedValue']
         
         try:
-            menu_items = menu_table.scan().get('Items', [])
-            menu_json_string = json.dumps(menu_items, cls=DecimalEncoder)
-            
+            menu_json_string, _ = get_menu()
             prompt = f"""
-You are a helpful restaurant order-taking assistant. A customer has made the following food request: "{raw_food_text}" and the following drink request: "{raw_drink_text}".
-Based on the menu provided below, parse the customer's entire request and extract all food and drink items, quantities, and any specified modifiers. If a quantity is not specified for an item, assume the quantity is 1. Your response must be only a valid JSON object with a single key 'order_items' which is a list of objects. If an item (food or drink) is not on the menu, do not include it. If the drink request is negative (e.g., "no", "nothing"), do not include any drinks.
+You are an intelligent restaurant assistant. A customer said: "{raw_order_text}".
+Based on the menu provided below, extract all items the customer ordered. Your response must be a valid JSON object with a single key 'order_items', which is a list of objects. Each object in the list must include the item's "item_name", "quantity", and its "Category" exactly as it appears in the menu. If a quantity is not specified, assume 1. If an item is not on the menu, do not include it.
 
 Menu: {menu_json_string}
 """
-            parsed_order = invoke_bedrock(prompt)
-            session_attrs['parsedOrder'] = json.dumps(parsed_order)
+            parsed_result = invoke_bedrock(prompt)
+            order_items = parsed_result.get('order_items', [])
             
-            # Check if Bedrock returned any items. If not, the order was invalid.
-            if not parsed_order.get('order_items'):
-                return elicit_slot(event, 'OrderQuery', "I'm sorry, I couldn't find any of those items on the menu. Let's try again. What would you like to order?", reset=True)
+            session_attrs['parsedOrder'] = json.dumps({'order_items': order_items})
+            session_attrs['initialParseComplete'] = "true"
             
-            order_items = parsed_order.get('order_items', [])
-            summary = "Okay, here is what I have for your order: "
-            item_strings = [f"{item['quantity']} {item['item_name']}" for item in order_items]
-            summary += ", ".join(item_strings)
-            summary += ". Is that correct?"
+            if not order_items:
+                return elicit_slot(event, 'OrderQuery', "I'm sorry, none of those items seem to be on our menu. What would you like to order?", reset=True)
             
-            return confirm_intent(event, summary)
+            # Check if the first item found requires configuration
+            first_item_name = order_items[0].get('item_name')
+            menu_item_data = find_item_in_menu(first_item_name)
+            
+            if menu_item_data and 'Options' in menu_item_data:
+                session_attrs['currentItemToConfigure'] = json.dumps(menu_item_data)
+                # Example: Just taking the first required option to ask about
+                required_option = next((opt for opt in menu_item_data['Options'] if opt.get('required')), None)
+                if required_option:
+                    option_name = required_option.get('name')
+                    choices = ", ".join([item.get('name') for item in required_option.get('items', [])])
+                    prompt_text = f"For the {first_item_name}, what {option_name} would you like? Your choices are: {choices}."
+                    # This requires an 'OptionChoice' slot in your Lex intent
+                    return elicit_slot(event, 'OptionChoice', prompt_text)
+            
+            has_food = any(item.get('Category') not in ['Drink', 'Alcohol'] for item in order_items)
+            has_drinks = any(item.get('Category') in ['Drink', 'Alcohol'] for item in order_items)
+
+            if has_food and has_drinks:
+                summary = "Okay, I have: " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in order_items]) + ". Is that correct?"
+                return confirm_intent(event, summary)
+            elif has_food and not has_drinks:
+                return elicit_slot(event, 'DrinkQuery', "I've got your food order. Would you like anything to drink?")
+            elif has_drinks and not has_food:
+                drink_names = ", ".join([f"{item['quantity']} {item['item_name']}" for item in order_items])
+                return elicit_slot(event, 'OrderQuery', f"Okay, I have {drink_names}. What would you like to eat with that?")
+            else:
+                return elicit_slot(event, 'OrderQuery', "I couldn't quite understand that. What would you like to order?", reset=True)
 
         except Exception as e:
-            print(f"Error parsing combined order with Bedrock: {e}")
+            print(f"Error parsing initial order with Bedrock: {e}")
             return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you please try again?"})
 
-    # Fallback
+    # 5. If DrinkQuery is filled (because it was asked for)
+    if slots.get('DrinkQuery'):
+        parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
+        order_items = parsed_order.get('order_items', [])
+        drink_text = slots['DrinkQuery']['value']['interpretedValue']
+        
+        # This is the optional, second Bedrock call for validation
+        try:
+            menu_json_string, _ = get_menu()
+            prompt = f"A customer ordered a drink: \"{drink_text}\". Based on the menu, find the exact drink item. Respond in JSON with one key 'found_drink_items' (a list). If not on menu, return an empty list. Menu: {menu_json_string}"
+            validated_drink_result = invoke_bedrock(prompt)
+            found_drinks = validated_drink_result.get('found_drink_items', [])
+
+            if not found_drinks:
+                return elicit_slot(event, 'DrinkQuery', "Sorry, that drink isn't on the menu. What would you like?")
+            
+            order_items.extend(found_drinks)
+        except Exception as e:
+            print(f"Error validating drink: {e}")
+            order_items.append({'item_name': drink_text.strip(), 'quantity': 1, 'Category': 'Drink'})
+
+        session_attrs['parsedOrder'] = json.dumps({'order_items': order_items})
+        summary = "Okay, I have: " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in order_items]) + ". Is that correct?"
+        return confirm_intent(event, summary)
+
     return delegate(event, session_attrs)
 
 def fulfill_order(event):
-    """
-    Called when all slots are filled and the intent is ready to be fulfilled.
-    """
     try:
         session_attrs = event['sessionState'].get('sessionAttributes', {})
         final_order_str = session_attrs.get('parsedOrder', '{}')
         final_order = json.loads(final_order_str)
-        
         print(f"Fulfilling final order: {final_order_str}")
-        
-        summary = "Thank you! Your order has been placed. Here is a summary: "
-        item_strings = [f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])]
-        summary += ", ".join(item_strings)
-        
+        summary = "Thank you! Your order for " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])]) + " has been placed."
+        # Here you would add logic to save the order to your orders_table in DynamoDB
+        # orders_table.put_item(Item=final_order)
         return close_dialog(event, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
-        
     except Exception as e:
         print(f"Error fulfilling order: {e}")
-        return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I'm sorry, I encountered an error while finalizing your order. Please try again."})
+        return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I'm sorry, I encountered an error while finalizing your order."})
 
 def invoke_bedrock(prompt):
-    """
-    Helper function to call Bedrock.
-    NOTE: Updated for Claude 3 Messages API format.
-    """
-    # Create the body for the new Messages API
     body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1000,
-        "temperature": 0.1,
-        "messages": [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": prompt}]
-            }
-        ]
+        "anthropic_version": "bedrock-2023-05-31", "max_tokens": 2048, "temperature": 0.1,
+        "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     })
-    
     response = bedrock_client.invoke_model(
-        body=body,
-        modelId='anthropic.claude-3-haiku-20240307-v1:0', # Updated model ID
-        accept='application/json',
-        contentType='application/json'
+        body=body, modelId='anthropic.claude-3-haiku-20240307-v1:0',
+        accept='application/json', contentType='application/json'
     )
-    
     response_body = json.loads(response.get('body').read())
-    
-    # The completion is in a different location in the new response structure
     completion = response_body.get('content')[0].get('text')
     return json.loads(completion)
 
@@ -148,19 +205,13 @@ def invoke_bedrock(prompt):
 def elicit_slot(event, slot_to_elicit, message_content, reset=False):
     intent = event['sessionState']['intent']
     session_attrs = event['sessionState'].get('sessionAttributes', {})
-    
     if reset:
-        intent['slots'] = { "OrderQuery": None, "DrinkQuery": None }
+        intent['slots'] = { "OrderQuery": None, "DrinkQuery": None, "OptionChoice": None }
         session_attrs = {}
-
     return {
         'sessionState': {
-            'dialogAction': {
-                'type': 'ElicitSlot',
-                'slotToElicit': slot_to_elicit,
-            },
-            'intent': intent,
-            'sessionAttributes': session_attrs
+            'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': slot_to_elicit},
+            'intent': intent, 'sessionAttributes': session_attrs
         },
         'messages': [{'contentType': 'PlainText', 'content': message_content}]
     }
@@ -168,14 +219,10 @@ def elicit_slot(event, slot_to_elicit, message_content, reset=False):
 def confirm_intent(event, message_content):
     intent = event['sessionState']['intent']
     session_attrs = event['sessionState'].get('sessionAttributes', {})
-    
     return {
         'sessionState': {
-            'dialogAction': {
-                'type': 'ConfirmIntent'
-            },
-            'intent': intent,
-            'sessionAttributes': session_attrs
+            'dialogAction': {'type': 'ConfirmIntent'},
+            'intent': intent, 'sessionAttributes': session_attrs
         },
         'messages': [{'contentType': 'PlainText', 'content': message_content}]
     }
@@ -183,11 +230,8 @@ def confirm_intent(event, message_content):
 def delegate(event, session_attrs):
     return {
         'sessionState': {
-            'dialogAction': {
-                'type': 'Delegate'
-            },
-            'intent': event['sessionState']['intent'],
-            'sessionAttributes': session_attrs
+            'dialogAction': {'type': 'Delegate'},
+            'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs
         }
     }
 
@@ -195,9 +239,7 @@ def close_dialog(event, fulfillment_state, message):
     event['sessionState']['intent']['state'] = fulfillment_state
     return {
         'sessionState': {
-            'dialogAction': {
-                'type': 'Close'
-            },
+            'dialogAction': {'type': 'Close'},
             'intent': event['sessionState']['intent'],
             'sessionAttributes': event['sessionState'].get('sessionAttributes', {})
         },
