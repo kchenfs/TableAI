@@ -33,17 +33,26 @@ def lambda_handler(event, context):
 
 def handle_dialog(event):
     """
-    Manages the conversation flow, validates input, and elicits slots.
+    Manages the conversation flow, validates input, and uses the built-in confirmation.
     """
     intent = event['sessionState']['intent']
     slots = intent['slots']
     session_attrs = event['sessionState'].get('sessionAttributes', {})
+    
+    # 1. Check if the user has responded to the confirmation prompt
+    confirmation_state = intent.get('confirmationState')
+    if confirmation_state == 'Confirmed':
+        # Let Lex know it's ready for fulfillment
+        return delegate(event, session_attrs)
+    elif confirmation_state == 'Denied':
+        # User said "no," so reset slots and start over
+        return elicit_slot(event, 'OrderQuery', "My apologies. Let's start over. What would you like to order?", reset=True)
 
-    # 1. If the main food order hasn't been provided yet, ask for it.
+    # 2. If the main food order hasn't been provided yet, ask for it.
     if not slots.get('OrderQuery'):
         return elicit_slot(event, 'OrderQuery', "Certainly, what would you like to order?")
 
-    # 2. If OrderQuery IS provided, parse it and ask about drinks
+    # 3. If OrderQuery IS provided, parse it and ask about drinks
     if slots.get('OrderQuery') and not session_attrs.get('parsedOrder'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
         
@@ -60,14 +69,15 @@ Menu: {menu_json_string}
             parsed_order = invoke_bedrock(prompt)
             session_attrs['parsedOrder'] = json.dumps(parsed_order)
             
+            # Elicit the next slot (DrinkQuery)
             return elicit_slot(event, 'DrinkQuery', "Great, I've got that. Would you like anything to drink with your order?")
 
         except Exception as e:
             print(f"Error parsing food order with Bedrock: {e}")
             return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you please try again?"})
 
-    # 3. If DrinkQuery is provided, process it and ask for confirmation
-    if slots.get('DrinkQuery') and not slots.get('Confirmation'):
+    # 4. If DrinkQuery is provided, process it and trigger the confirmation prompt
+    if slots.get('DrinkQuery'):
         drink_text = slots['DrinkQuery']['value']['interpretedValue'].lower()
         parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
         order_items = parsed_order.get('order_items', [])
@@ -84,16 +94,10 @@ Menu: {menu_json_string}
         summary += ", ".join(item_strings)
         summary += ". Is that correct?"
         
-        return elicit_slot(event, 'Confirmation', summary)
+        # Use the new helper to ask for confirmation
+        return confirm_intent(event, summary)
 
-    # 4. If Confirmation is provided, delegate back to Lex or reset
-    if slots.get('Confirmation'):
-        confirmation_value = slots['Confirmation']['value']['interpretedValue']
-        if confirmation_value.lower() == 'yes':
-            return delegate(event, session_attrs)
-        else:
-            return elicit_slot(event, 'OrderQuery', "My apologies. Let's start over. What would you like to order?", reset=True)
-
+    # Fallback
     return delegate(event, session_attrs)
 
 def fulfill_order(event):
@@ -155,7 +159,7 @@ def elicit_slot(event, slot_to_elicit, message_content, reset=False):
     session_attrs = event['sessionState'].get('sessionAttributes', {})
     
     if reset:
-        intent['slots'] = { "OrderQuery": None, "DrinkQuery": None, "Confirmation": None }
+        intent['slots'] = { "OrderQuery": None, "DrinkQuery": None }
         session_attrs = {}
 
     return {
@@ -163,6 +167,21 @@ def elicit_slot(event, slot_to_elicit, message_content, reset=False):
             'dialogAction': {
                 'type': 'ElicitSlot',
                 'slotToElicit': slot_to_elicit,
+            },
+            'intent': intent,
+            'sessionAttributes': session_attrs
+        },
+        'messages': [{'contentType': 'PlainText', 'content': message_content}]
+    }
+
+def confirm_intent(event, message_content):
+    intent = event['sessionState']['intent']
+    session_attrs = event['sessionState'].get('sessionAttributes', {})
+    
+    return {
+        'sessionState': {
+            'dialogAction': {
+                'type': 'ConfirmIntent'
             },
             'intent': intent,
             'sessionAttributes': session_attrs
