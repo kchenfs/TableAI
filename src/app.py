@@ -7,11 +7,11 @@ import time
 import re
 from openai import OpenAI
 
-# --- IMPORTS for fastembed ---
+# --- IMPORTS for fastembed with NumPy ---
 from fastembed import TextEmbedding
 import numpy as np
-from scipy.spatial.distance import cosine
-# -----------------------------
+# from scipy.spatial.distance import cosine # <-- REMOVED SCIPY
+# ----------------------------------------
 
 # Environment variables
 MENU_TABLE_NAME = os.environ['MENU_TABLE_NAME']
@@ -29,18 +29,15 @@ client = OpenAI(
     api_key=OPENROUTER_API_KEY,
 )
 
-# --- Initialize fastembed model in the global scope for performance ---
+# Initialize fastembed model in the global scope
 embedding_model = TextEmbedding()
-# --------------------------------------------------------------------
 
 # Global caches
 _menu_cache_timestamp = 0
 _menu_cache_ttl_seconds = int(os.environ.get("MENU_CACHE_TTL", 300))
 _menu_raw = None
 _menu_lookup = None
-# --- Cache for the pre-computed embeddings ---
 _menu_embeddings_cache = None
-# ---------------------------------------------
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
@@ -116,6 +113,7 @@ def get_menu(force_refresh=False):
         print("Menu cache hit.")
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
+# --- MODIFIED _fuzzy_find to use NumPy ---
 def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     if not normalized_name:
         return None, 0.0
@@ -128,7 +126,20 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     best_match_key = None
 
     for item_embedding in embeddings_cache:
-        similarity = 1 - cosine(query_embedding, item_embedding['embedding'])
+        # --- This is the new calculation using NumPy ---
+        v1 = query_embedding
+        v2 = item_embedding['embedding']
+        
+        dot_product = np.dot(v1, v2)
+        norm_v1 = np.linalg.norm(v1)
+        norm_v2 = np.linalg.norm(v2)
+        
+        if norm_v1 == 0 or norm_v2 == 0:
+            similarity = 0.0
+        else:
+            similarity = dot_product / (norm_v1 * norm_v2)
+        # ----------------------------------------------
+        
         if similarity > best_score:
             best_score = similarity
             best_match_key = item_embedding['normalized_key']
@@ -137,6 +148,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         return best_match_key, best_score
     
     return None, 0.0
+# ---------------------------------------------
 
 def lambda_handler(event, context):
     print("Event received")
