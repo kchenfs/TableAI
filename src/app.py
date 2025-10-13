@@ -7,10 +7,9 @@ import time
 import re
 from openai import OpenAI
 
-# --- IMPORTS for fastembed with NumPy ---
-from fastembed import TextEmbedding
+# --- MODIFIED IMPORTS for Google Gemini ---
+import google.generativeai as genai
 import numpy as np
-# from scipy.spatial.distance import cosine # <-- REMOVED SCIPY
 # ----------------------------------------
 
 # Environment variables
@@ -18,6 +17,9 @@ MENU_TABLE_NAME = os.environ['MENU_TABLE_NAME']
 ORDERS_TABLE_NAME = os.environ['ORDERS_TABLE_NAME']
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/llama-3.3-70b-instruct:free")
+# --- NEW: Google AI Environment Variable ---
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+# -------------------------------------------
 
 # AWS and AI model initialization
 dynamodb = boto3.resource('dynamodb')
@@ -29,16 +31,22 @@ client = OpenAI(
     api_key=OPENROUTER_API_KEY,
 )
 
-# Initialize fastembed model in the global scope
-embedding_model = TextEmbedding()
+# --- MODIFIED: Configure Google AI Client ---
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+    GEMINI_EMBEDDING_MODEL = 'models/embedding-001'
+else:
+    print("Warning: GOOGLE_API_KEY environment variable not set.")
+# -------------------------------------------
 
-# Global caches
+# Global caches (remain the same)
 _menu_cache_timestamp = 0
 _menu_cache_ttl_seconds = int(os.environ.get("MENU_CACHE_TTL", 300))
 _menu_raw = None
 _menu_lookup = None
 _menu_embeddings_cache = None
 
+# --- (The following helper functions do not need changes) ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, decimal.Decimal):
@@ -51,6 +59,7 @@ def _normalize_name(s):
     return re.sub(r'\s+', ' ', s.strip().lower())
 
 def _build_menu_lookup(items):
+    # This function does not need changes
     lookup = {}
     for item in items:
         raw_name = item.get('ItemName', '')
@@ -88,6 +97,7 @@ def _build_menu_lookup(items):
     return lookup
 
 def get_menu(force_refresh=False):
+    # This function's logic for caching embeddings is still valid and does not need changes
     global _menu_cache_timestamp, _menu_raw, _menu_lookup, _menu_embeddings_cache
     now = int(time.time())
     if force_refresh or _menu_raw is None or (now - _menu_cache_timestamp) > _menu_cache_ttl_seconds:
@@ -113,7 +123,7 @@ def get_menu(force_refresh=False):
         print("Menu cache hit.")
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
-# --- MODIFIED _fuzzy_find to use NumPy ---
+# --- MODIFIED _fuzzy_find to use Google Gemini API ---
 def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     if not normalized_name:
         return None, 0.0
@@ -121,12 +131,23 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     if normalized_name in menu_lookup:
         return normalized_name, 1.0
 
-    query_embedding = list(embedding_model.embed(normalized_name))[0]
+    # 1. Generate embedding for the user's query by calling the Google API
+    try:
+        result = genai.embed_content(
+            model=GEMINI_EMBEDDING_MODEL,
+            content=normalized_name,
+            task_type="RETRIEVAL_QUERY" # Use QUERY for user searches
+        )
+        query_embedding = result['embedding']
+    except Exception as e:
+        print(f"Error getting embedding from Google API: {e}")
+        return None, 0.0
+
     best_score = -1
     best_match_key = None
 
+    # 2. Find the best match using the same NumPy calculation
     for item_embedding in embeddings_cache:
-        # --- This is the new calculation using NumPy ---
         v1 = query_embedding
         v2 = item_embedding['embedding']
         
@@ -138,7 +159,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
             similarity = 0.0
         else:
             similarity = dot_product / (norm_v1 * norm_v2)
-        # ----------------------------------------------
         
         if similarity > best_score:
             best_score = similarity
@@ -150,6 +170,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     return None, 0.0
 # ---------------------------------------------
 
+# --- (The rest of your code remains the same) ---
 def lambda_handler(event, context):
     print("Event received")
     print(json.dumps(event))
