@@ -4,17 +4,25 @@ import json
 import boto3
 import os
 import decimal
+from openai import OpenAI  # <-- ADDED import
 
-# Initialize Boto3 clients
+# Initialize Boto3 clients for DynamoDB
 dynamodb = boto3.resource('dynamodb')
 menu_table = dynamodb.Table(os.environ['MENU_TABLE_NAME'])
 orders_table = dynamodb.Table(os.environ['ORDERS_TABLE_NAME'])
-bedrock_client = boto3.client('bedrock-runtime', region_name=os.environ['BEDROCK_REGION'])
+
+# --- REPLACED BEDROCK WITH OPENROUTER CLIENT ---
+# This uses the OPENROUTER_API_KEY environment variable you'll set in Lambda
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+)
 
 # Global cache for the menu to reduce DynamoDB reads
 menu_cache = None
 # In-memory representation of the menu for easy lookups
 menu_data_cache = None
+
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
@@ -26,6 +34,7 @@ class DecimalEncoder(json.JSONEncoder):
                 return float(o)
         return super(DecimalEncoder, self).default(o)
 
+
 def get_menu(force_refresh=False):
     """
     Fetches the menu from DynamoDB and caches it.
@@ -34,13 +43,13 @@ def get_menu(force_refresh=False):
     global menu_cache, menu_data_cache
     if menu_cache is None or force_refresh:
         print("Cache miss or force refresh. Fetching menu from DynamoDB.")
-        # Boto3's DynamoDB resource automatically deserializes the JSON-like structure
         response = menu_table.scan()
         menu_data_cache = response.get('Items', [])
         menu_cache = json.dumps(menu_data_cache, cls=DecimalEncoder)
     else:
         print("Cache hit. Using cached menu.")
     return menu_cache, menu_data_cache
+
 
 def find_item_in_menu(item_name):
     """Helper to find an item's full data from the cached menu."""
@@ -50,6 +59,7 @@ def find_item_in_menu(item_name):
         if item.get('ItemName', '').lower() == item_name.lower():
             return item
     return None
+
 
 def lambda_handler(event, context):
     print(f"Received event: {json.dumps(event)}")
@@ -61,6 +71,7 @@ def lambda_handler(event, context):
         return fulfill_order(event)
     else:
         return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I'm not sure how to handle that."})
+
 
 def handle_dialog(event):
     intent = event['sessionState']['intent']
@@ -78,13 +89,6 @@ def handle_dialog(event):
 
     # 2. Handle a user providing a choice for a complex item
     if session_attrs.get('currentItemToConfigure'):
-        # This is where you would build the logic to handle the user's response
-        # from the OptionChoice slot and check for more required options.
-        # For simplicity in this example, we will assume one choice is enough.
-        
-        # ( Placeholder for complex item configuration logic )
-        
-        # After configuring, clear the state and move on
         session_attrs.pop('currentItemToConfigure', None)
         return elicit_slot(event, 'DrinkQuery', "Got it. Anything to drink with that?")
 
@@ -92,7 +96,7 @@ def handle_dialog(event):
     if not slots.get('OrderQuery'):
         return elicit_slot(event, 'OrderQuery', "Certainly, what would you like to order?")
 
-    # 4. If OrderQuery is filled, call Bedrock to parse everything.
+    # 4. If OrderQuery is filled, call the LLM to parse everything.
     if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
         
@@ -104,7 +108,7 @@ Based on the menu provided below, extract all items the customer ordered. Your r
 
 Menu: {menu_json_string}
 """
-            parsed_result = invoke_bedrock(prompt)
+            parsed_result = invoke_openrouter(prompt) # <-- UPDATED
             order_items = parsed_result.get('order_items', [])
             
             session_attrs['parsedOrder'] = json.dumps({'order_items': order_items})
@@ -113,19 +117,16 @@ Menu: {menu_json_string}
             if not order_items:
                 return elicit_slot(event, 'OrderQuery', "I'm sorry, none of those items seem to be on our menu. What would you like to order?", reset=True)
             
-            # Check if the first item found requires configuration
             first_item_name = order_items[0].get('item_name')
             menu_item_data = find_item_in_menu(first_item_name)
             
             if menu_item_data and 'Options' in menu_item_data:
                 session_attrs['currentItemToConfigure'] = json.dumps(menu_item_data)
-                # Example: Just taking the first required option to ask about
                 required_option = next((opt for opt in menu_item_data['Options'] if opt.get('required')), None)
                 if required_option:
                     option_name = required_option.get('name')
                     choices = ", ".join([item.get('name') for item in required_option.get('items', [])])
                     prompt_text = f"For the {first_item_name}, what {option_name} would you like? Your choices are: {choices}."
-                    # This requires an 'OptionChoice' slot in your Lex intent
                     return elicit_slot(event, 'OptionChoice', prompt_text)
             
             has_food = any(item.get('Category') not in ['Drink', 'Alcohol'] for item in order_items)
@@ -143,7 +144,7 @@ Menu: {menu_json_string}
                 return elicit_slot(event, 'OrderQuery', "I couldn't quite understand that. What would you like to order?", reset=True)
 
         except Exception as e:
-            print(f"Error parsing initial order with Bedrock: {e}")
+            print(f"Error parsing initial order with OpenRouter: {e}")
             return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you please try again?"})
 
     # 5. If DrinkQuery is filled (because it was asked for)
@@ -152,11 +153,10 @@ Menu: {menu_json_string}
         order_items = parsed_order.get('order_items', [])
         drink_text = slots['DrinkQuery']['value']['interpretedValue']
         
-        # This is the optional, second Bedrock call for validation
         try:
             menu_json_string, _ = get_menu()
             prompt = f"A customer ordered a drink: \"{drink_text}\". Based on the menu, find the exact drink item. Respond in JSON with one key 'found_drink_items' (a list). If not on menu, return an empty list. Menu: {menu_json_string}"
-            validated_drink_result = invoke_bedrock(prompt)
+            validated_drink_result = invoke_openrouter(prompt) # <-- UPDATED
             found_drinks = validated_drink_result.get('found_drink_items', [])
 
             if not found_drinks:
@@ -173,6 +173,7 @@ Menu: {menu_json_string}
 
     return delegate(event, session_attrs)
 
+
 def fulfill_order(event):
     try:
         session_attrs = event['sessionState'].get('sessionAttributes', {})
@@ -180,25 +181,43 @@ def fulfill_order(event):
         final_order = json.loads(final_order_str)
         print(f"Fulfilling final order: {final_order_str}")
         summary = "Thank you! Your order for " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])]) + " has been placed."
-        # Here you would add logic to save the order to your orders_table in DynamoDB
         # orders_table.put_item(Item=final_order)
         return close_dialog(event, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
     except Exception as e:
         print(f"Error fulfilling order: {e}")
         return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I'm sorry, I encountered an error while finalizing your order."})
 
-def invoke_bedrock(prompt):
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31", "max_tokens": 2048, "temperature": 0.1,
-        "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-    })
-    response = bedrock_client.invoke_model(
-        body=body, modelId='anthropic.claude-3-haiku-20240307-v1:0',
-        accept='application/json', contentType='application/json'
-    )
-    response_body = json.loads(response.get('body').read())
-    completion = response_body.get('content')[0].get('text')
-    return json.loads(completion)
+# --- NEW FUNCTION TO CALL OPENROUTER ---
+def invoke_openrouter(prompt):
+    """
+    Invokes the OpenRouter API with a given prompt and returns the parsed JSON response.
+    """
+    print("Invoking OpenRouter with Llama 4 Maverick...")
+    try:
+        completion = client.chat.completions.create(
+          # Optional headers to identify your app on OpenRouter rankings
+          extra_headers={
+            "HTTP-Referer": "YOUR_SITE_URL",  # Replace with your actual site
+            "X-Title": "YOUR_APP_NAME",      # Replace with your app name
+          },
+          model="meta-llama/llama-4-maverick:free",
+          messages=[
+            {
+              "role": "user",
+              "content": prompt,
+            }
+          ],
+          # Tell the model to return a valid JSON object
+          response_format={"type": "json_object"},
+        )
+        
+        response_text = completion.choices[0].message.content
+        print(f"Received from OpenRouter: {response_text}")
+        return json.loads(response_text)
+    except Exception as e:
+        print(f"Error calling OpenRouter API: {e}")
+        # Return an empty dict or raise the exception, depending on desired error handling
+        return {}
 
 # --- Lex V2 Response Helpers ---
 

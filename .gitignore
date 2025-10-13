@@ -260,3 +260,12 @@ Thumbs.db
 .vscode/
 
 tmp/
+
+
+# Terraform secrets
+terraform.tfvars
+*.tfvars
+
+# Other Terraform files to ignore
+.terraform/
+.terraform.lock.hcl
