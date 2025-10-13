@@ -43,7 +43,7 @@ jobs:
           aws-region: ca-central-1
 
       # THIS IS THE CHANGE: Use the AWS CLI to update ONLY the function code.
-      - name: Deploy WebhookIngestor Lambda Code
+      - name: Deploy Lambda Code
         run: |
           aws lambda update-function-code \
             --function-name TableAILexFulfillmentHandler \
