@@ -1,266 +1,321 @@
-# /src/app.py
-
+# app.py
 import json
 import boto3
 import os
 import decimal
-from openai import OpenAI  # <-- ADDED import
+import time
+import re
+from openai import OpenAI
 
-# Initialize Boto3 clients for DynamoDB
+# --- IMPORTS for fastembed ---
+from fastembed import TextEmbedding
+import numpy as np
+from scipy.spatial.distance import cosine
+# -----------------------------
+
+# Environment variables
+MENU_TABLE_NAME = os.environ['MENU_TABLE_NAME']
+ORDERS_TABLE_NAME = os.environ['ORDERS_TABLE_NAME']
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/llama-3.3-70b-instruct:free")
+
+# AWS and AI model initialization
 dynamodb = boto3.resource('dynamodb')
-menu_table = dynamodb.Table(os.environ['MENU_TABLE_NAME'])
-orders_table = dynamodb.Table(os.environ['ORDERS_TABLE_NAME'])
+menu_table = dynamodb.Table(MENU_TABLE_NAME)
+orders_table = dynamodb.Table(ORDERS_TABLE_NAME)
 
-# --- REPLACED BEDROCK WITH OPENROUTER CLIENT ---
-# This uses the OPENROUTER_API_KEY environment variable you'll set in Lambda
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key=os.environ.get("OPENROUTER_API_KEY"),
+    api_key=OPENROUTER_API_KEY,
 )
 
-# Global cache for the menu to reduce DynamoDB reads
-menu_cache = None
-# In-memory representation of the menu for easy lookups
-menu_data_cache = None
+# --- Initialize fastembed model in the global scope for performance ---
+embedding_model = TextEmbedding()
+# --------------------------------------------------------------------
 
+# Global caches
+_menu_cache_timestamp = 0
+_menu_cache_ttl_seconds = int(os.environ.get("MENU_CACHE_TTL", 300))
+_menu_raw = None
+_menu_lookup = None
+# --- Cache for the pre-computed embeddings ---
+_menu_embeddings_cache = None
+# ---------------------------------------------
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, decimal.Decimal):
-            # Convert Decimal to float or int
-            if o % 1 == 0:
-                return int(o)
-            else:
-                return float(o)
+            return float(o)
         return super(DecimalEncoder, self).default(o)
 
+def _normalize_name(s):
+    if not isinstance(s, str):
+        return ""
+    return re.sub(r'\s+', ' ', s.strip().lower())
+
+def _build_menu_lookup(items):
+    lookup = {}
+    for item in items:
+        raw_name = item.get('ItemName', '')
+        if not raw_name:
+            continue
+        normalized = _normalize_name(raw_name)
+        options_struct = {}
+        raw_options_list = item.get('Options', [])
+        for opt in raw_options_list:
+            opt_m = opt.get('M', opt)
+            opt_name_raw = opt_m.get('name', {}).get('S') if isinstance(opt_m.get('name'), dict) else opt_m.get('name')
+            if not opt_name_raw:
+                continue
+            opt_name = _normalize_name(opt_name_raw)
+            choices = []
+            items_list = opt_m.get('items', {}).get('L', []) if isinstance(opt_m.get('items'), dict) else opt_m.get('items', [])
+            for c in items_list:
+                c_m = c.get('M', c)
+                choice_name_raw = c_m.get('name', {}).get('S') if isinstance(c_m.get('name'), dict) else c_m.get('name')
+                if choice_name_raw:
+                    choices.append(_normalize_name(choice_name_raw))
+            options_struct[opt_name] = {
+                "raw_name": opt_name_raw,
+                "choices": choices,
+                "required": bool(opt_m.get('required', {}).get('BOOL')) if isinstance(opt_m.get('required'), dict) else bool(opt_m.get('required'))
+            }
+        lookup[normalized] = {
+            "raw_item": item,
+            "normalized_name": normalized,
+            "options": options_struct,
+            "category": item.get('Category'),
+            "price": item.get('Price'),
+            "item_number": item.get('ItemNumber')
+        }
+    return lookup
 
 def get_menu(force_refresh=False):
-    """
-    Fetches the menu from DynamoDB and caches it.
-    Returns both the JSON string for Bedrock and a Python dict for logic.
-    """
-    global menu_cache, menu_data_cache
-    if menu_cache is None or force_refresh:
-        print("Cache miss or force refresh. Fetching menu from DynamoDB.")
-        response = menu_table.scan()
-        menu_data_cache = response.get('Items', [])
-        menu_cache = json.dumps(menu_data_cache, cls=DecimalEncoder)
+    global _menu_cache_timestamp, _menu_raw, _menu_lookup, _menu_embeddings_cache
+    now = int(time.time())
+    if force_refresh or _menu_raw is None or (now - _menu_cache_timestamp) > _menu_cache_ttl_seconds:
+        print("Refreshing menu cache and embeddings from DynamoDB.")
+        resp = menu_table.scan()
+        items = resp.get('Items', [])
+        
+        _menu_raw = items
+        _menu_lookup = _build_menu_lookup(items)
+        _menu_cache_timestamp = now
+
+        embeddings = []
+        for item in items:
+            embedding_decimals = item.get('ItemEmbedding')
+            if embedding_decimals:
+                embedding_floats = np.array([float(d) for d in embedding_decimals])
+                embeddings.append({
+                    "normalized_key": _normalize_name(item.get('ItemName', '')),
+                    "embedding": embedding_floats
+                })
+        _menu_embeddings_cache = embeddings
     else:
-        print("Cache hit. Using cached menu.")
-    return menu_cache, menu_data_cache
+        print("Menu cache hit.")
+    return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
+def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
+    if not normalized_name:
+        return None, 0.0
 
-def find_item_in_menu(item_name):
-    """Helper to find an item's full data from the cached menu."""
-    _, menu_data = get_menu()
-    for item in menu_data:
-        # Case-insensitive search for robustness
-        if item.get('ItemName', '').lower() == item_name.lower():
-            return item
-    return None
+    if normalized_name in menu_lookup:
+        return normalized_name, 1.0
 
+    query_embedding = list(embedding_model.embed(normalized_name))[0]
+    best_score = -1
+    best_match_key = None
+
+    for item_embedding in embeddings_cache:
+        similarity = 1 - cosine(query_embedding, item_embedding['embedding'])
+        if similarity > best_score:
+            best_score = similarity
+            best_match_key = item_embedding['normalized_key']
+
+    if best_score >= cutoff:
+        return best_match_key, best_score
+    
+    return None, 0.0
 
 def lambda_handler(event, context):
-    print(f"Received event: {json.dumps(event)}")
+    print("Event received")
+    print(json.dumps(event))
     invocation_source = event.get('invocationSource')
-    
     if invocation_source == 'DialogCodeHook':
         return handle_dialog(event)
     elif invocation_source == 'FulfillmentCodeHook':
         return fulfill_order(event)
-    else:
-        return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I'm not sure how to handle that."})
-
+    return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I couldn't handle your request."})
 
 def handle_dialog(event):
     intent = event['sessionState']['intent']
-    slots = intent['slots']
-    session_attrs = event['sessionState'].get('sessionAttributes', {})
-    
-    # --- Main Logic Flow ---
-
-    # 1. Handle the response to the final confirmation prompt
+    slots = intent.get('slots', {})
+    session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
     confirmation_state = intent.get('confirmationState')
+
     if confirmation_state == 'Confirmed':
         return delegate(event, session_attrs)
     if confirmation_state == 'Denied':
-        return elicit_slot(event, 'OrderQuery', "My apologies. Let's start over. What would you like to order?", reset=True)
+        return elicit_slot(event, 'OrderQuery', "Okay — let's start over. What would you like to order?", reset=True)
 
-    # 2. Handle a user providing a choice for a complex item
     if session_attrs.get('currentItemToConfigure'):
         session_attrs.pop('currentItemToConfigure', None)
-        return elicit_slot(event, 'DrinkQuery', "Got it. Anything to drink with that?")
+        return elicit_slot(event, 'DrinkQuery', "Great — anything to drink with that?")
 
-    # 3. Elicit the first slot if the conversation has just started
     if not slots.get('OrderQuery'):
-        return elicit_slot(event, 'OrderQuery', "Certainly, what would you like to order?")
+        return elicit_slot(event, 'OrderQuery', "Sure — what would you like to order?")
 
-    # 4. If OrderQuery is filled, call the LLM to parse everything.
     if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
-        
         try:
-            menu_json_string, _ = get_menu()
-            prompt = f"""
-You are an intelligent restaurant assistant. A customer said: "{raw_order_text}".
-Based on the menu provided below, extract all items the customer ordered. Your response must be a valid JSON object with a single key 'order_items', which is a list of objects. Each object in the list must include the item's "item_name", "quantity", and its "Category" exactly as it appears in the menu. If a quantity is not specified, assume 1. If an item is not on the menu, do not include it.
-
-Menu: {menu_json_string}
-"""
-            parsed_result = invoke_openrouter(prompt) # <-- UPDATED
+            parsed_result = invoke_openrouter_parser(raw_order_text)
             order_items = parsed_result.get('order_items', [])
-            
-            session_attrs['parsedOrder'] = json.dumps({'order_items': order_items})
-            session_attrs['initialParseComplete'] = "true"
-            
-            if not order_items:
-                return elicit_slot(event, 'OrderQuery', "I'm sorry, none of those items seem to be on our menu. What would you like to order?", reset=True)
-            
-            first_item_name = order_items[0].get('item_name')
-            menu_item_data = find_item_in_menu(first_item_name)
-            
-            if menu_item_data and 'Options' in menu_item_data:
-                session_attrs['currentItemToConfigure'] = json.dumps(menu_item_data)
-                required_option = next((opt for opt in menu_item_data['Options'] if opt.get('required')), None)
-                if required_option:
-                    option_name = required_option.get('name')
-                    choices = ", ".join([item.get('name') for item in required_option.get('items', [])])
-                    prompt_text = f"For the {first_item_name}, what {option_name} would you like? Your choices are: {choices}."
-                    return elicit_slot(event, 'OptionChoice', prompt_text)
-            
-            has_food = any(item.get('Category') not in ['Drink', 'Alcohol'] for item in order_items)
-            has_drinks = any(item.get('Category') in ['Drink', 'Alcohol'] for item in order_items)
+            normalized_items = []
+            _, menu_lookup, embeddings_cache = get_menu()
 
-            if has_food and has_drinks:
-                summary = "Okay, I have: " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in order_items]) + ". Is that correct?"
+            for it in order_items:
+                parsed_name = it.get('item_name', '')
+                quantity = int(it.get('quantity', 1))
+                options = it.get('options', {})
+                norm = _normalize_name(parsed_name)
+                best_key, score = _fuzzy_find(norm, menu_lookup, embeddings_cache)
+                
+                if best_key:
+                    menu_entry = menu_lookup[best_key]
+                    validated_options = {}
+                    for opt_key_raw, opt_val_raw in (options.items() if isinstance(options, dict) else []):
+                        opt_key = _normalize_name(opt_key_raw)
+                        opt_val = _normalize_name(str(opt_val_raw))
+                        menu_opt = menu_entry['options'].get(opt_key)
+                        if menu_opt and opt_val in menu_opt['choices']:
+                            validated_options[menu_opt['raw_name']] = opt_val_raw
+                        else:
+                            validated_options[opt_key_raw] = opt_val_raw
+                    normalized_items.append({
+                        "item_name": menu_entry['raw_item'].get('ItemName'),
+                        "normalized_key": best_key, "quantity": quantity,
+                        "options": validated_options, "category": menu_entry.get('category'),
+                        "price": menu_entry.get('price'), "item_number": menu_entry.get('item_number')
+                    })
+                else:
+                    normalized_items.append({
+                        "item_name": parsed_name, "normalized_key": None,
+                        "quantity": quantity, "options": options
+                    })
+
+            session_attrs['parsedOrder'] = json.dumps({"order_items": normalized_items}, cls=DecimalEncoder)
+            session_attrs['initialParseComplete'] = "true"
+
+            if not any(item.get('normalized_key') for item in normalized_items):
+                 return elicit_slot(event, 'OrderQuery', f"I'm sorry, I couldn't find any of those items on the menu. Could you please tell me your order again?")
+
+            unmatched = [i for i in normalized_items if not i.get('normalized_key')]
+            if unmatched:
+                return elicit_slot(event, 'OrderQuery', f"I couldn't find '{unmatched[0]['item_name']}' on the menu. Could you clarify that part of your order?")
+
+            for ni in normalized_items:
+                if ni.get('normalized_key'):
+                    entry = menu_lookup[ni['normalized_key']]
+                    for opt_key_norm, opt_meta in entry['options'].items():
+                        if opt_meta.get('required') and (not ni['options'] or opt_meta.get('raw_name') not in ni['options']):
+                            session_attrs['currentItemToConfigure'] = json.dumps(entry['raw_item'], cls=DecimalEncoder)
+                            option_name = opt_meta.get('raw_name')
+                            choices_text = ", ".join(opt_meta.get('choices', []))
+                            return elicit_slot(event, 'OptionChoice', f"For {ni['item_name']}, which {option_name} would you like? Choices: {choices_text}")
+
+            has_food = any(i.get('category') and 'drink' not in str(i.get('category','')).lower() for i in normalized_items)
+            has_drink = any(i.get('category') and 'drink' in str(i.get('category','')).lower() for i in normalized_items)
+
+            if has_food and has_drink:
+                summary = "Okay — I have: " + ", ".join([f"{i['quantity']} {i['item_name']}" for i in normalized_items]) + ". Is that correct?"
                 return confirm_intent(event, summary)
-            elif has_food and not has_drinks:
+            elif has_food and not has_drink:
                 return elicit_slot(event, 'DrinkQuery', "I've got your food order. Would you like anything to drink?")
-            elif has_drinks and not has_food:
-                drink_names = ", ".join([f"{item['quantity']} {item['item_name']}" for item in order_items])
-                return elicit_slot(event, 'OrderQuery', f"Okay, I have {drink_names}. What would you like to eat with that?")
-            else:
-                return elicit_slot(event, 'OrderQuery', "I couldn't quite understand that. What would you like to order?", reset=True)
+            elif has_drink and not has_food:
+                return elicit_slot(event, 'OrderQuery', f"Okay, I have your drinks. What would you like to eat?")
 
         except Exception as e:
-            print(f"Error parsing initial order with OpenRouter: {e}")
-            return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you please try again?"})
+            print("Error during parsing:", e)
+            return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding your order. Could you try again?"})
 
-    # 5. If DrinkQuery is filled (because it was asked for)
     if slots.get('DrinkQuery'):
         parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
         order_items = parsed_order.get('order_items', [])
         drink_text = slots['DrinkQuery']['value']['interpretedValue']
-        
-        try:
-            menu_json_string, _ = get_menu()
-            prompt = f"A customer ordered a drink: \"{drink_text}\". Based on the menu, find the exact drink item. Respond in JSON with one key 'found_drink_items' (a list). If not on menu, return an empty list. Menu: {menu_json_string}"
-            validated_drink_result = invoke_openrouter(prompt) # <-- UPDATED
-            found_drinks = validated_drink_result.get('found_drink_items', [])
-
-            if not found_drinks:
-                return elicit_slot(event, 'DrinkQuery', "Sorry, that drink isn't on the menu. What would you like?")
-            
-            order_items.extend(found_drinks)
-        except Exception as e:
-            print(f"Error validating drink: {e}")
-            order_items.append({'item_name': drink_text.strip(), 'quantity': 1, 'Category': 'Drink'})
-
-        session_attrs['parsedOrder'] = json.dumps({'order_items': order_items})
+        _, menu_lookup, embeddings_cache = get_menu()
+        best_key, score = _fuzzy_find(_normalize_name(drink_text), menu_lookup, embeddings_cache)
+        if best_key:
+            menu_entry = menu_lookup[best_key]
+            order_items.append({
+                "item_name": menu_entry['raw_item'].get('ItemName'), "normalized_key": best_key,
+                "quantity": 1, "options": {}, "category": menu_entry.get('category')
+            })
+        session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
         summary = "Okay, I have: " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in order_items]) + ". Is that correct?"
         return confirm_intent(event, summary)
 
     return delegate(event, session_attrs)
-
 
 def fulfill_order(event):
     try:
         session_attrs = event['sessionState'].get('sessionAttributes', {})
         final_order_str = session_attrs.get('parsedOrder', '{}')
         final_order = json.loads(final_order_str)
-        print(f"Fulfilling final order: {final_order_str}")
         summary = "Thank you! Your order for " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])]) + " has been placed."
-        # orders_table.put_item(Item=final_order)
         return close_dialog(event, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
     except Exception as e:
-        print(f"Error fulfilling order: {e}")
-        return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I'm sorry, I encountered an error while finalizing your order."})
+        print("Error fulfilling order:", e)
+        return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I encountered an error while finalizing your order."})
 
-# --- NEW FUNCTION TO CALL OPENROUTER ---
-def invoke_openrouter(prompt):
-    """
-    Invokes the OpenRouter API with a given prompt and returns the parsed JSON response.
-    """
-    print("Invoking OpenRouter with Llama 4 Maverick...")
+def _extract_json_from_text(text):
     try:
-        completion = client.chat.completions.create(
-          # Optional headers to identify your app on OpenRouter rankings
-          extra_headers={
-            "HTTP-Referer": "YOUR_SITE_URL",  # Replace with your actual site
-            "X-Title": "YOUR_APP_NAME",      # Replace with your app name
-          },
-          model="meta-llama/llama-4-maverick:free",
-          messages=[
-            {
-              "role": "user",
-              "content": prompt,
-            }
-          ],
-          # Tell the model to return a valid JSON object
-          response_format={"type": "json_object"},
-        )
-        
-        response_text = completion.choices[0].message.content
-        print(f"Received from OpenRouter: {response_text}")
-        return json.loads(response_text)
-    except Exception as e:
-        print(f"Error calling OpenRouter API: {e}")
-        # Return an empty dict or raise the exception, depending on desired error handling
-        return {}
+        start = text.find('{')
+        if start == -1: return None
+        brace = 0
+        for i in range(start, len(text)):
+            if text[i] == '{': brace += 1
+            elif text[i] == '}':
+                brace -= 1
+                if brace == 0: return text[start:i+1]
+        return None
+    except Exception:
+        return None
 
-# --- Lex V2 Response Helpers ---
+def invoke_openrouter_parser(user_text):
+    system = "You are a strict JSON parser. Extract items from the user's order and return a single JSON object with key 'order_items'. Each item must have 'item_name', 'quantity', and optional 'options' (an object)."
+    examples = [
+        {"role": "user", "content": "I want two green dragon rolls and one nestea."},
+        {"role": "assistant", "content": json.dumps({"order_items": [{"item_name": "green dragon roll", "quantity": 2}, {"item_name": "nestea", "quantity": 1}]})},
+        {"role": "user", "content": "One Sashimi, Sushi & Maki Combo B and three seaweed salads."},
+        {"role": "assistant", "content": json.dumps({"order_items": [{"item_name": "Sashimi, Sushi & Maki Combo", "quantity": 1, "options": {"Combo Choice": "B"}}, {"item_name": "Seaweed Salad", "quantity": 3}]})}
+    ]
+    prompt_user = f'Customer said: "{user_text}". Respond with JSON only.'
+    try:
+        completion = client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "system", "content": system}, *examples, {"role": "user", "content": prompt_user}])
+        response_text = completion.choices[0].message.content
+        if isinstance(response_text, str):
+            js_str = _extract_json_from_text(response_text)
+            return json.loads(js_str) if js_str else {}
+        return response_text if isinstance(response_text, dict) else {}
+    except Exception as e:
+        print("Error calling OpenRouter:", e)
+        return {}
 
 def elicit_slot(event, slot_to_elicit, message_content, reset=False):
     intent = event['sessionState']['intent']
     session_attrs = event['sessionState'].get('sessionAttributes', {})
     if reset:
-        intent['slots'] = { "OrderQuery": None, "DrinkQuery": None, "OptionChoice": None }
+        intent['slots'] = {"OrderQuery": None, "DrinkQuery": None, "OptionChoice": None}
         session_attrs = {}
-    return {
-        'sessionState': {
-            'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': slot_to_elicit},
-            'intent': intent, 'sessionAttributes': session_attrs
-        },
-        'messages': [{'contentType': 'PlainText', 'content': message_content}]
-    }
+    return {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': slot_to_elicit}, 'intent': intent, 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
 
 def confirm_intent(event, message_content):
-    intent = event['sessionState']['intent']
-    session_attrs = event['sessionState'].get('sessionAttributes', {})
-    return {
-        'sessionState': {
-            'dialogAction': {'type': 'ConfirmIntent'},
-            'intent': intent, 'sessionAttributes': session_attrs
-        },
-        'messages': [{'contentType': 'PlainText', 'content': message_content}]
-    }
+    return {'sessionState': {'dialogAction': {'type': 'ConfirmIntent'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': event['sessionState'].get('sessionAttributes', {})}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
 
 def delegate(event, session_attrs):
-    return {
-        'sessionState': {
-            'dialogAction': {'type': 'Delegate'},
-            'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs
-        }
-    }
+    return {'sessionState': {'dialogAction': {'type': 'Delegate'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}}
 
 def close_dialog(event, fulfillment_state, message):
     event['sessionState']['intent']['state'] = fulfillment_state
-    return {
-        'sessionState': {
-            'dialogAction': {'type': 'Close'},
-            'intent': event['sessionState']['intent'],
-            'sessionAttributes': event['sessionState'].get('sessionAttributes', {})
-        },
-        'messages': [message]
-    }
+    return {'sessionState': {'dialogAction': {'type': 'Close'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': event['sessionState'].get('sessionAttributes', {})}, 'messages': [message]}

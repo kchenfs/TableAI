@@ -269,3 +269,7 @@ terraform.tfvars
 # Other Terraform files to ignore
 .terraform/
 .terraform.lock.hcl
+
+.ratelimiter.py
+
+.precompute_embeddings.py
