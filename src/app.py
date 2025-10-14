@@ -120,11 +120,13 @@ def get_menu(force_refresh=False):
         print("Menu cache hit.")
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
-def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
+def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.6): # Temporarily lowered cutoff
     if not normalized_name:
         return None, 0.0
 
     if normalized_name in menu_lookup:
+        # Added a log for direct matches
+        print(f"Direct match found for '{normalized_name}'")
         return normalized_name, 1.0
 
     try:
@@ -135,7 +137,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         )
         query_embedding = result['embedding']
     except Exception as e:
-        print(f"Error getting embedding from Google API: {e}")
+        print(f"Error getting embedding from Google API for '{normalized_name}': {e}")
         return None, 0.0
 
     best_score = -1
@@ -149,14 +151,15 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         norm_v1 = np.linalg.norm(v1)
         norm_v2 = np.linalg.norm(v2)
         
-        if norm_v1 == 0 or norm_v2 == 0:
-            similarity = 0.0
-        else:
-            similarity = dot_product / (norm_v1 * norm_v2)
+        similarity = 0.0 if norm_v1 == 0 or norm_v2 == 0 else dot_product / (norm_v1 * norm_v2)
         
         if similarity > best_score:
             best_score = similarity
             best_match_key = item_embedding['normalized_key']
+
+    # --- ADDED LOGGING HERE ---
+    print(f"Fuzzy find for '{normalized_name}': Best match is '{best_match_key}' with score {best_score:.4f}")
+    # --------------------------
 
     if best_score >= cutoff:
         return best_match_key, best_score
