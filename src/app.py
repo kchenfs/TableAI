@@ -102,6 +102,9 @@ def get_menu(force_refresh=False):
         resp = menu_table.scan()
         items = resp.get('Items', [])
         
+        # --- ADDED: Logging to inspect the data from DynamoDB ---
+        print(f"Found {len(items)} items from DynamoDB. First item raw: {json.dumps(items[0], cls=DecimalEncoder) if items else 'None'}")
+        
         _menu_raw = items
         _menu_lookup = _build_menu_lookup(items)
         _menu_cache_timestamp = now
@@ -120,16 +123,17 @@ def get_menu(force_refresh=False):
         print("Menu cache hit.")
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
-def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.6): # Temporarily lowered cutoff
+def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8): # Reset cutoff to a higher value
     if not normalized_name:
         return None, 0.0
 
     if normalized_name in menu_lookup:
-        # Added a log for direct matches
         print(f"Direct match found for '{normalized_name}'")
         return normalized_name, 1.0
 
     try:
+        # Print the text being sent for the live query
+        print(f"Embedding live query text: '{normalized_name}'")
         result = genai.embed_content(
             model=GEMINI_EMBEDDING_MODEL,
             content=normalized_name,
@@ -157,9 +161,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.6): # T
             best_score = similarity
             best_match_key = item_embedding['normalized_key']
 
-    # --- ADDED LOGGING HERE ---
     print(f"Fuzzy find for '{normalized_name}': Best match is '{best_match_key}' with score {best_score:.4f}")
-    # --------------------------
 
     if best_score >= cutoff:
         return best_match_key, best_score
