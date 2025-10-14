@@ -119,11 +119,15 @@ def get_menu(force_refresh=False):
                     "embedding": embedding_floats
                 })
         _menu_embeddings_cache = embeddings
+        
+        # --- ADDED: Logging to confirm embeddings were loaded ---
+        print(f"Successfully loaded {len(_menu_embeddings_cache)} embeddings into the cache.")
+        
     else:
         print("Menu cache hit.")
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
-def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8): # Reset cutoff to a higher value
+def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     if not normalized_name:
         return None, 0.0
 
@@ -132,7 +136,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8): # R
         return normalized_name, 1.0
 
     try:
-        # Print the text being sent for the live query
+        # --- ADDED: Log text before sending to Gemini ---
         print(f"Embedding live query text: '{normalized_name}'")
         result = genai.embed_content(
             model=GEMINI_EMBEDDING_MODEL,
@@ -140,6 +144,10 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8): # R
             task_type="RETRIEVAL_QUERY"
         )
         query_embedding = result['embedding']
+
+        # --- ADDED: Log the returned vector ---
+        print(f"Received vector from Gemini for '{normalized_name}'. Dimensions: {len(query_embedding)}. Preview: {query_embedding[:3]}...{query_embedding[-3:]}")
+
     except Exception as e:
         print(f"Error getting embedding from Google API for '{normalized_name}': {e}")
         return None, 0.0
@@ -161,6 +169,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8): # R
             best_score = similarity
             best_match_key = item_embedding['normalized_key']
 
+    # --- ADDED: Log the final comparison result ---
     print(f"Fuzzy find for '{normalized_name}': Best match is '{best_match_key}' with score {best_score:.4f}")
 
     if best_score >= cutoff:
