@@ -52,10 +52,9 @@ This project is a fully serverless, AI-enhanced ordering system built on AWS. It
          → {"order_items": [{"item_name": "dragon roll", "quantity": 2},
                             {"item_name": "nestea", "quantity": 1}]}
 
-  Step 2️⃣: For each item_name, call Embedding Microservice
+  Step 2️⃣: For each item_name, call Embedding Service Gemini Model
      ↓
-  [Embedding Microservice on EC2/ECS]
-     ↳ Task: Return embedding vector for "dragon roll"
+   Return embedding vector for "dragon roll"
      ↓
   [Lambda] compares to precomputed DynamoDB embeddings
      ↳ Finds closest match (e.g., "Green Dragon Roll")

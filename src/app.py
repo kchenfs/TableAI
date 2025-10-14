@@ -201,6 +201,9 @@ def handle_dialog(event):
 
     if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
+
+        print(f"Invoking LLM parser with text: '{raw_order_text}'")
+
         try:
             parsed_result = invoke_openrouter_parser(raw_order_text)
             order_items = parsed_result.get('order_items', [])
