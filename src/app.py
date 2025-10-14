@@ -102,7 +102,6 @@ def get_menu(force_refresh=False):
         resp = menu_table.scan()
         items = resp.get('Items', [])
         
-        # --- ADDED: Logging to inspect the data from DynamoDB ---
         print(f"Found {len(items)} items from DynamoDB. First item raw: {json.dumps(items[0], cls=DecimalEncoder) if items else 'None'}")
         
         _menu_raw = items
@@ -120,7 +119,6 @@ def get_menu(force_refresh=False):
                 })
         _menu_embeddings_cache = embeddings
         
-        # --- ADDED: Logging to confirm embeddings were loaded ---
         print(f"Successfully loaded {len(_menu_embeddings_cache)} embeddings into the cache.")
         
     else:
@@ -136,7 +134,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         return normalized_name, 1.0
 
     try:
-        # --- ADDED: Log text before sending to Gemini ---
         print(f"Embedding live query text: '{normalized_name}'")
         result = genai.embed_content(
             model=GEMINI_EMBEDDING_MODEL,
@@ -145,7 +142,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         )
         query_embedding = result['embedding']
 
-        # --- ADDED: Log the returned vector ---
         print(f"Received vector from Gemini for '{normalized_name}'. Dimensions: {len(query_embedding)}. Preview: {query_embedding[:3]}...{query_embedding[-3:]}")
 
     except Exception as e:
@@ -169,7 +165,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
             best_score = similarity
             best_match_key = item_embedding['normalized_key']
 
-    # --- ADDED: Log the final comparison result ---
     print(f"Fuzzy find for '{normalized_name}': Best match is '{best_match_key}' with score {best_score:.4f}")
 
     if best_score >= cutoff:
@@ -223,13 +218,33 @@ def handle_dialog(event):
                 parsed_name = it.get('item_name', '')
                 quantity = int(it.get('quantity', 1))
                 options = it.get('options', {})
+                
+                print(f"DEBUG: 'options' for item '{parsed_name}' is of type: {type(options)} with value: {options}")
+
+                # --- ADDED: Robustly handle 'options' if it's a string ---
+                if isinstance(options, str):
+                    try:
+                        # Try to parse the string as JSON
+                        options = json.loads(options)
+                        if not isinstance(options, dict):
+                            # Handle cases where JSON is valid but not an object (e.g., "null")
+                            options = {}
+                    except json.JSONDecodeError:
+                        # If parsing fails, it's not valid JSON, so use an empty dict
+                        print(f"DEBUG: Could not parse 'options' string '{options}' as JSON. Defaulting to empty dict.")
+                        options = {}
+                elif not isinstance(options, dict):
+                    # Final safeguard for any other non-dict, non-string types
+                    options = {}
+                # -----------------------------------------------------------
+
                 norm = _normalize_name(parsed_name)
                 best_key, score = _fuzzy_find(norm, menu_lookup, embeddings_cache)
                 
                 if best_key:
                     menu_entry = menu_lookup[best_key]
                     validated_options = {}
-                    for opt_key_raw, opt_val_raw in (options.items() if isinstance(options, dict) else []):
+                    for opt_key_raw, opt_val_raw in (options.items()):
                         opt_key = _normalize_name(opt_key_raw)
                         opt_val = _normalize_name(str(opt_val_raw))
                         menu_opt = menu_entry['options'].get(opt_key)
