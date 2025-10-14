@@ -216,6 +216,7 @@ def handle_dialog(event):
 
             order_items = parsed_result.get('order_items', [])
             print(f"DEBUG: The entire order_items is of type: {type(order_items)}")
+            print(order_items, 'debugging order_items type')
             normalized_items = []
             _, menu_lookup, embeddings_cache = get_menu()
 
