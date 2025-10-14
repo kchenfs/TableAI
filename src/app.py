@@ -102,7 +102,6 @@ def get_menu(force_refresh=False):
         resp = menu_table.scan()
         items = resp.get('Items', [])
         
-        # --- ADDED: Logging to inspect the data from DynamoDB ---
         print(f"Found {len(items)} items from DynamoDB. First item raw: {json.dumps(items[0], cls=DecimalEncoder) if items else 'None'}")
         
         _menu_raw = items
@@ -120,7 +119,6 @@ def get_menu(force_refresh=False):
                 })
         _menu_embeddings_cache = embeddings
         
-        # --- ADDED: Logging to confirm embeddings were loaded ---
         print(f"Successfully loaded {len(_menu_embeddings_cache)} embeddings into the cache.")
         
     else:
@@ -136,7 +134,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         return normalized_name, 1.0
 
     try:
-        # --- ADDED: Log text before sending to Gemini ---
         print(f"Embedding live query text: '{normalized_name}'")
         result = genai.embed_content(
             model=GEMINI_EMBEDDING_MODEL,
@@ -145,7 +142,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         )
         query_embedding = result['embedding']
 
-        # --- ADDED: Log the returned vector ---
         print(f"Received vector from Gemini for '{normalized_name}'. Dimensions: {len(query_embedding)}. Preview: {query_embedding[:3]}...{query_embedding[-3:]}")
 
     except Exception as e:
@@ -169,7 +165,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
             best_score = similarity
             best_match_key = item_embedding['normalized_key']
 
-    # --- ADDED: Log the final comparison result ---
     print(f"Fuzzy find for '{normalized_name}': Best match is '{best_match_key}' with score {best_score:.4f}")
 
     if best_score >= cutoff:
@@ -213,19 +208,13 @@ def handle_dialog(event):
         try:
             parsed_result = invoke_openrouter_parser(raw_order_text)
 
+            # --- ADDED: Log the type of the entire LLM response ---
+            print(f"DEBUG: The entire parsed_result is of type: {type(parsed_result)}")
+            # --------------------------------------------------------
+
             print(f"LLM parser returned: {json.dumps(parsed_result)}")
 
             order_items = parsed_result.get('order_items', [])
-
-            if isinstance(order_items, list):
-                print("DEBUG: 'order_items' is a list (correct type).")
-            elif isinstance(order_items, str):
-                print("DEBUG: 'order_items' is a STRING (incorrect type).")
-            elif isinstance(order_items, dict):
-                print("DEBUG: 'order_items' is a DICTIONARY (incorrect, should be a list of dictionaries).")
-            else:
-                print(f"DEBUG: 'order_items' is an unexpected type: {type(order_items)}")
-
             normalized_items = []
             _, menu_lookup, embeddings_cache = get_menu()
 
@@ -233,6 +222,11 @@ def handle_dialog(event):
                 parsed_name = it.get('item_name', '')
                 quantity = int(it.get('quantity', 1))
                 options = it.get('options', {})
+
+                # --- ADDED: Log the type of the 'options' field for this item ---
+                print(f"DEBUG: For item '{parsed_name}', the 'options' field is of type: {type(options)}")
+                # -----------------------------------------------------------------
+
                 norm = _normalize_name(parsed_name)
                 best_key, score = _fuzzy_find(norm, menu_lookup, embeddings_cache)
                 
