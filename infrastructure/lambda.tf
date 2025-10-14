@@ -88,7 +88,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
   environment {
     variables = {
       MENU_TABLE_NAME   = data.aws_dynamodb_table.menu.name
-      ORDERS_TABLE_NAME = data.aws_dynamodb_table.orders.name
+      ORDERS_TABLENAME = data.aws_dynamodb_table.orders.name
       OPENROUTER_API_KEY = var.openrouter_api_key 
     }
   }
