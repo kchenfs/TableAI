@@ -307,6 +307,47 @@ def handle_dialog(event):
     if confirmation_state == 'Denied':
         return elicit_slot(event, 'OrderQuery', "Okay — let's start over. What would you like to order?", reset=True)
 
+    # --- MODIFICATION: Handle drink query separately to prevent re-parsing ---
+    # If the user is answering the drink question, process it and move to confirmation.
+    if slots.get('DrinkQuery') and slots['DrinkQuery'].get('value') and session_attrs.get('initialParseComplete'):
+        current_order_str = session_attrs.get('parsedOrder', '{}')
+        current_order = json.loads(current_order_str)
+        order_items = current_order.get('order_items', [])
+
+        drink_text = slots['DrinkQuery']['value']['interpretedValue']
+        _, menu_lookup, embeddings_cache = get_menu()
+        # Use a slightly higher cutoff for drinks as they are usually simpler
+        best_key, score = _fuzzy_find(_normalize_name(drink_text), menu_lookup, embeddings_cache, cutoff=0.7)
+        
+        if best_key:
+            menu_entry = menu_lookup[best_key]
+            # Check if this drink is already in the order to avoid duplicates from the loop
+            found = False
+            for item in order_items:
+                if item.get("normalized_key") == best_key:
+                    item["quantity"] += 1
+                    found = True
+                    break
+            if not found:
+                order_items.append({
+                    "item_name": menu_entry['raw_item'].get('ItemName'), "normalized_key": best_key,
+                    "quantity": 1, "options": {}, "category": menu_entry.get('category')
+                })
+        
+        session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
+        
+        # After adding the drink, go directly to the final confirmation summary
+        summary_items = []
+        for item in order_items:
+            options_str = ""
+            if item.get('options'):
+                options_str = " (" + ", ".join(item['options'].values()) + ")"
+            summary_items.append(f"{item['quantity']} {item['item_name']}{options_str}")
+
+        summary = "Okay — I have: " + ", ".join(summary_items) + ". Is that correct?"
+        return confirm_intent(event, summary)
+    # --- END MODIFICATION ---
+
     if not slots.get('OrderQuery'):
         return elicit_slot(event, 'OrderQuery', "Sure — what would you like to order?")
 
@@ -391,11 +432,12 @@ def handle_dialog(event):
             traceback.print_exc()
             return close_dialog(event, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding. Could you try again?"})
 
-    # This block now primarily handles drink additions and final confirmation
+    # This block is now a fallback and for final confirmation after the main logic flows
     current_order_str = session_attrs.get('parsedOrder', '{}')
     current_order = json.loads(current_order_str)
     order_items = current_order.get('order_items', [])
     
+    # This logic for DrinkQuery is now mostly redundant but kept as a fallback.
     if slots.get('DrinkQuery') and slots['DrinkQuery'].get('value'):
         drink_text = slots['DrinkQuery']['value']['interpretedValue']
         _, menu_lookup, embeddings_cache = get_menu()
@@ -558,3 +600,4 @@ def close_dialog(event, fulfillment_state, message):
         },
         'messages': [message]
     }
+
