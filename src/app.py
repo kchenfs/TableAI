@@ -46,7 +46,6 @@ _menu_raw = None
 _menu_lookup = None
 _menu_embeddings_cache = None
 
-# --- (The following helper functions do not need changes) ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, decimal.Decimal):
@@ -59,7 +58,6 @@ def _normalize_name(s):
     return re.sub(r'\s+', ' ', s.strip().lower())
 
 def _build_menu_lookup(items):
-    # This function does not need changes
     lookup = {}
     for item in items:
         raw_name = item.get('ItemName', '')
@@ -97,7 +95,6 @@ def _build_menu_lookup(items):
     return lookup
 
 def get_menu(force_refresh=False):
-    # This function's logic for caching embeddings is still valid and does not need changes
     global _menu_cache_timestamp, _menu_raw, _menu_lookup, _menu_embeddings_cache
     now = int(time.time())
     if force_refresh or _menu_raw is None or (now - _menu_cache_timestamp) > _menu_cache_ttl_seconds:
@@ -123,7 +120,6 @@ def get_menu(force_refresh=False):
         print("Menu cache hit.")
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
-# --- MODIFIED _fuzzy_find to use Google Gemini API ---
 def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     if not normalized_name:
         return None, 0.0
@@ -131,12 +127,11 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     if normalized_name in menu_lookup:
         return normalized_name, 1.0
 
-    # 1. Generate embedding for the user's query by calling the Google API
     try:
         result = genai.embed_content(
             model=GEMINI_EMBEDDING_MODEL,
             content=normalized_name,
-            task_type="RETRIEVAL_QUERY" # Use QUERY for user searches
+            task_type="RETRIEVAL_QUERY"
         )
         query_embedding = result['embedding']
     except Exception as e:
@@ -146,7 +141,6 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
     best_score = -1
     best_match_key = None
 
-    # 2. Find the best match using the same NumPy calculation
     for item_embedding in embeddings_cache:
         v1 = query_embedding
         v2 = item_embedding['embedding']
@@ -168,9 +162,7 @@ def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
         return best_match_key, best_score
     
     return None, 0.0
-# ---------------------------------------------
 
-# --- (The rest of your code remains the same) ---
 def lambda_handler(event, context):
     print("Event received")
     print(json.dumps(event))
@@ -201,11 +193,14 @@ def handle_dialog(event):
 
     if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
-
+        
         print(f"Invoking LLM parser with text: '{raw_order_text}'")
-
+        
         try:
             parsed_result = invoke_openrouter_parser(raw_order_text)
+
+            print(f"LLM parser returned: {json.dumps(parsed_result)}")
+
             order_items = parsed_result.get('order_items', [])
             normalized_items = []
             _, menu_lookup, embeddings_cache = get_menu()
@@ -239,6 +234,8 @@ def handle_dialog(event):
                         "item_name": parsed_name, "normalized_key": None,
                         "quantity": quantity, "options": options
                     })
+            
+            print(f"Normalized items after fuzzy find: {json.dumps(normalized_items, cls=DecimalEncoder)}")
 
             session_attrs['parsedOrder'] = json.dumps({"order_items": normalized_items}, cls=DecimalEncoder)
             session_attrs['initialParseComplete'] = "true"
@@ -328,8 +325,16 @@ def invoke_openrouter_parser(user_text):
     ]
     prompt_user = f'Customer said: "{user_text}". Respond with JSON only.'
     try:
-        completion = client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "system", "content": system}, *examples, {"role": "user", "content": prompt_user}])
+        completion = client.chat.completions.create(
+            model=MODEL_NAME, 
+            messages=[{"role": "system", "content": system}, *examples, {"role": "user", "content": prompt_user}],
+            stream=False
+        )
+
         response_text = completion.choices[0].message.content
+        
+        print(f"Raw response from LLM API: {response_text}")
+
         if isinstance(response_text, str):
             js_str = _extract_json_from_text(response_text)
             return json.loads(js_str) if js_str else {}
