@@ -215,6 +215,7 @@ def handle_dialog(event):
             print(f"LLM parser returned: {json.dumps(parsed_result)}")
 
             order_items = parsed_result.get('order_items', [])
+            print(f"DEBUG: The entire order_items is of type: {type(order_items)}")
             normalized_items = []
             _, menu_lookup, embeddings_cache = get_menu()
 
