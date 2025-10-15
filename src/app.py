@@ -221,7 +221,7 @@ def get_menu(force_refresh=False):
     
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 
-def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.8):
+def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.6):
     if not normalized_name:
         return None, 0.0
 
