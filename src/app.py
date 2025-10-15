@@ -239,9 +239,8 @@ def handle_dialog(event):
     if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
         try:
+            # This check is no longer needed here because it's handled in the parser function
             parsed_result = invoke_openrouter_parser(raw_order_text)
-            if not isinstance(parsed_result.get('order_items'), list):
-                return elicit_slot(event, session_attrs, 'OrderQuery', "I had trouble understanding your order. Could you try again?")
             
             normalized_items = []
             _, menu_lookup, embeddings_cache = get_menu()
@@ -260,6 +259,7 @@ def handle_dialog(event):
                 else:
                     normalized_items.append({"item_name": parsed_name, "normalized_key": None, "quantity": quantity, "options": options})
             
+            # This mitigation logic will now be reached correctly
             if session_attrs.pop('is_fallback_order', None) and not any(item.get('normalized_key') for item in normalized_items):
                 print("MITIGATION: Fallback triggered but no valid menu items found.")
                 message = "I'm sorry, I can only take food and drink orders. I didn't recognize any menu items in your request. Could you try again?"
@@ -271,6 +271,7 @@ def handle_dialog(event):
             print(f"Error during parsing: {e}"); traceback.print_exc()
             return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding that. Could you please try again?"})
     
+    # ... The rest of the handle_dialog function remains the same ...
     if session_attrs.get('parsedOrder'):
         current_order = json.loads(session_attrs['parsedOrder'])
         normalized_items = current_order.get('order_items', [])
@@ -355,11 +356,18 @@ def invoke_openrouter_parser(user_text):
         completion = client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "system", "content": system}, *examples, {"role": "user", "content": prompt_user}], stream=False)
         response_text = completion.choices[0].message.content
         json_str = _extract_json_from_text(response_text)
-        if json_str: return json.loads(json_str)
-        return {}
+        if json_str:
+            parsed_json = json.loads(json_str)
+            # --- MODIFIED PART ---
+            # Ensure the response always has the correct structure
+            if 'order_items' not in parsed_json or not isinstance(parsed_json.get('order_items'), list):
+                return {'order_items': []}
+            return parsed_json
+        return {'order_items': []} # Return empty structure if no JSON
     except Exception as e:
-        print(f"Error calling OpenRouter: {e}"); traceback.print_exc(); return {}
-
+        print(f"Error calling OpenRouter: {e}"); traceback.print_exc()
+        return {'order_items': []} # Return empty structure on error
+    
 def elicit_slot(event, session_attrs, slot_to_elicit, message_content, reset=False):
     intent = event['sessionState']['intent']
     if reset:
