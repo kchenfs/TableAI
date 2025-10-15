@@ -176,7 +176,29 @@ def lambda_handler(event, context):
     if intent_name == 'GreetingIntent':
         greetings = ["Hello! I'm ready to take your order. What can I get for you?", "Hi there! What would you like to order today?", "Welcome! Tell me what you'd like to eat."]
         response_message = random.choice(greetings)
-        return {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'intentName': 'OrderFood', 'slotToElicit': 'OrderQuery'}, 'sessionAttributes': {}}, 'messages': [{'contentType': 'PlainText', 'content': response_message}]}
+        
+        # --- THIS IS THE CORRECTED PART ---
+        # We must return the complete intent object that we want Lex to proceed with.
+        return {
+            'sessionState': {
+                'dialogAction': {
+                    'type': 'ElicitSlot',
+                    'slotToElicit': 'OrderQuery'
+                },
+                # The 'intent' object was missing before. Now it's correctly included.
+                'intent': {
+                    'name': 'OrderFood',
+                    'slots': {
+                        'OrderQuery': None,
+                        'DrinkQuery': None,
+                        'OptionChoice': None
+                    },
+                    'state': 'InProgress'
+                },
+                'sessionAttributes': {}
+            },
+            'messages': [{'contentType': 'PlainText', 'content': response_message}]
+        }
 
     # 3. Handle regular dialog and fulfillment hooks
     invocation_source = event.get('invocationSource')
@@ -186,7 +208,6 @@ def lambda_handler(event, context):
         return fulfill_order(event)
     
     return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I couldn't handle your request."})
-
 
 def handle_dialog(event):
     intent = event['sessionState']['intent']
