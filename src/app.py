@@ -7,7 +7,7 @@ import time
 import re
 from openai import OpenAI
 import traceback
-import random # <-- ADDED FOR VARIED GREETINGS
+import random
 
 # --- MODIFIED IMPORTS for Google Gemini ---
 import google.generativeai as genai
@@ -152,7 +152,7 @@ def _check_if_option_in_item_name(parsed_name, menu_entry):
 
 def lambda_handler(event, context):
     print("--- NEW INVOCATION ---")
-    print(f"EVENT: {json.dumps(event)}")
+    print(f"EVENT from Lex: {json.dumps(event)}")
     
     intent_name = event['sessionState']['intent']['name']
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
@@ -177,15 +177,12 @@ def lambda_handler(event, context):
         greetings = ["Hello! I'm ready to take your order. What can I get for you?", "Hi there! What would you like to order today?", "Welcome! Tell me what you'd like to eat."]
         response_message = random.choice(greetings)
         
-        # --- THIS IS THE CORRECTED PART ---
-        # We must return the complete intent object that we want Lex to proceed with.
-        return {
+        response = {
             'sessionState': {
                 'dialogAction': {
                     'type': 'ElicitSlot',
                     'slotToElicit': 'OrderQuery'
                 },
-                # The 'intent' object was missing before. Now it's correctly included.
                 'intent': {
                     'name': 'OrderFood',
                     'slots': {
@@ -199,6 +196,8 @@ def lambda_handler(event, context):
             },
             'messages': [{'contentType': 'PlainText', 'content': response_message}]
         }
+        print(f"RESPONSE to Lex: {json.dumps(response)}") # <-- ADDED
+        return response
 
     # 3. Handle regular dialog and fulfillment hooks
     invocation_source = event.get('invocationSource')
@@ -208,6 +207,7 @@ def lambda_handler(event, context):
         return fulfill_order(event)
     
     return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I couldn't handle your request."})
+
 
 def handle_dialog(event):
     intent = event['sessionState']['intent']
@@ -260,12 +260,10 @@ def handle_dialog(event):
                 else:
                     normalized_items.append({"item_name": parsed_name, "normalized_key": None, "quantity": quantity, "options": options})
             
-            # --- MITIGATION LOGIC ---
-            # Check if this was a fallback and if we found any valid items.
             if session_attrs.pop('is_fallback_order', None) and not any(item.get('normalized_key') for item in normalized_items):
                 print("MITIGATION: Fallback triggered but no valid menu items found.")
                 message = "I'm sorry, I can only take food and drink orders. I didn't recognize any menu items in your request. Could you try again?"
-                return elicit_slot(event, {}, 'OrderQuery', message, reset=True) # Reset the session
+                return elicit_slot(event, {}, 'OrderQuery', message, reset=True)
                 
             session_attrs['parsedOrder'] = json.dumps({"order_items": normalized_items}, cls=DecimalEncoder)
             session_attrs['initialParseComplete'] = "true"
@@ -367,14 +365,22 @@ def elicit_slot(event, session_attrs, slot_to_elicit, message_content, reset=Fal
     if reset:
         intent['slots'] = {"OrderQuery": None, "DrinkQuery": None, "OptionChoice": None}
         session_attrs = {}
-    return {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': slot_to_elicit}, 'intent': intent, 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
+    response = {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': slot_to_elicit}, 'intent': intent, 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
+    print(f"RESPONSE to Lex: {json.dumps(response)}") # <-- ADDED
+    return response
 
 def confirm_intent(event, session_attrs, message_content):
-    return {'sessionState': {'dialogAction': {'type': 'ConfirmIntent'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
+    response = {'sessionState': {'dialogAction': {'type': 'ConfirmIntent'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
+    print(f"RESPONSE to Lex: {json.dumps(response)}") # <-- ADDED
+    return response
 
 def delegate(event, session_attrs):
-    return {'sessionState': {'dialogAction': {'type': 'Delegate'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}}
+    response = {'sessionState': {'dialogAction': {'type': 'Delegate'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}}
+    print(f"RESPONSE to Lex: {json.dumps(response)}") # <-- ADDED
+    return response
 
 def close_dialog(event, session_attrs, fulfillment_state, message):
     event['sessionState']['intent']['state'] = fulfillment_state
-    return {'sessionState': {'dialogAction': {'type': 'Close'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [message]}
+    response = {'sessionState': {'dialogAction': {'type': 'Close'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [message]}
+    print(f"RESPONSE to Lex: {json.dumps(response)}") # <-- ADDED
+    return response
