@@ -32,6 +32,7 @@ dynamodb = boto3.resource('dynamodb')
 s3 = boto3.client('s3') # S3 client
 menu_table = dynamodb.Table(MENU_TABLE_NAME)
 orders_table = dynamodb.Table(ORDERS_TABLE_NAME)
+_menu_cache_ttl_seconds = 3600  # Cache the menu for 1 hour
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",

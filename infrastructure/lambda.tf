@@ -55,6 +55,8 @@ resource "aws_iam_policy" "lex_fulfillment_policy" {
         Effect   = "Allow"
         Resource = [
           data.aws_dynamodb_table.menu.arn,
+          data.aws_dynamodb_table.orders.arn
+
         ]
       },
       # Permission to get the ECR authorization token
@@ -97,7 +99,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
   function_name = "TableAILexFulfillmentHandler"
   role          = aws_iam_role.lex_fulfillment_role.arn
   timeout       = 90
-  memory_size = 1024
+  memory_size = 2048
 
   package_type = "Image"
 
@@ -116,7 +118,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
 
   tags = {
     Name    = "TableAI Lex Fulfillment Lambda"
-    Project = "TableAI"
+    Project = "TableAI1"
   }
 }
 
