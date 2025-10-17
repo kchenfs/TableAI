@@ -52,12 +52,32 @@ resource "aws_iam_policy" "lex_fulfillment_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Effect = "Allow"
+        Effect   = "Allow"
         Resource = [
           data.aws_dynamodb_table.menu.arn,
         ]
       },
-      # Grant permission ONLY to the specific Claude 3 Haiku model.
+      # Permission to get the ECR authorization token
+      {
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      # Permissions to push and pull images from the specific ECR repository
+      {
+        Sid    = "AllowEcrImagePushPull"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:CompleteLayerUpload",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart"
+        ]
+        Resource = aws_ecr_repository.momotaro_lex_bot.arn
+      } # The extra brace was removed from here
     ]
   })
 }

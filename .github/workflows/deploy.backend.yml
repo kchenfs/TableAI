@@ -7,8 +7,6 @@ on:
     branches:
       - main
 
-# --- FIX #1: UN-INDENTED THIS ENTIRE BLOCK ---
-# The 'env' block must be at the top level, at the same indentation as 'name', 'on', and 'jobs'.
 env:
   ECR_REPOSITORY: momotaro-lex-bot
   AWS_REGION: ca-central-1
@@ -18,21 +16,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      contents: read
+      id-token: write # Required for passwordless authentication to AWS
+      contents: read  # Required for the checkout step
 
     steps:
-      # --- FIX #2: ADDED THE ESSENTIAL CHECKOUT STEP ---
-      # This step must come first to make your code available to the workflow.
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # This step assumes a GitHub secret named 'AWS_IAM_ROLE_FOR_OIDC_ARN'
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          # This requires a GitHub secret containing the ARN of the IAM role
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_FOR_OIDC_ARN }}
-          aws-region: ${{ env.AWS_REGION }} # Using the env var for consistency
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -40,22 +36,16 @@ jobs:
         
       - name: Build, Tag, and Push Image to ECR
         id: build-image
+        # This is the key fix: tells the step to run from your project's directory
+        working-directory: ./lambda_container_project 
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           ECR_REPOSITORY_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+          
+          # This build command now correctly finds the Dockerfile in the current directory
           docker build -t $ECR_REPOSITORY_URI:latest .
+          
           docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:${IMAGE_TAG}
           docker push $ECR_REPOSITORY_URI:latest
           docker push $ECR_REPOSITORY_URI:${IMAGE_TAG}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ./infrastructure
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
-        working-directory: ./infrastructure
