@@ -7,6 +7,12 @@ on:
     branches:
       - main
 
+      env:
+  ECR_REPOSITORY: momotaro-lex-bot
+  AWS_REGION: ca-central-1
+  IMAGE_TAG: ${{ github.sha }}
+
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -15,26 +21,6 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-
-      - name: Install dependencies
-        run: pip install -r src/requirements.txt -t ./dist
-
-      - name: Prepare deployment package
-        run: cp src/*.py ./dist/
-      
-      # THIS IS A NEW STEP: Create a single .zip file from the dist directory
-      - name: Create Zip File
-        run: |
-          cd dist
-          zip -r ../deployment_package.zip .
-          cd ..
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -42,10 +28,40 @@ jobs:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_FOR_OIDC_ARN }}
           aws-region: ca-central-1
 
-      # THIS IS THE CHANGE: Use the AWS CLI to update ONLY the function code.
-      - name: Deploy Lambda Code
+      # --------------------------------------------------------------------
+      # Step 2: LOGIN TO AMAZON ECR
+      # --------------------------------------------------------------------
+      # This action automatically uses the temporary credentials from the OIDC role.
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      # --------------------------------------------------------------------
+      # Step 3: BUILD, TAG, AND PUSH DOCKER IMAGE
+      # --------------------------------------------------------------------
+      # This step also automatically uses the temporary credentials.
+      - name: Build, Tag, and Push Image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          aws lambda update-function-code \
-            --function-name TableAILexFulfillmentHandler \
-            --zip-file fileb://deployment_package.zip
+          ECR_REPOSITORY_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+          docker build -t $ECR_REPOSITORY_URI:latest .
+          docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:${IMAGE_TAG}
+          docker push $ECR_REPOSITORY_URI:latest
+          docker push $ECR_REPOSITORY_URI:${IMAGE_TAG}
 
+      # --------------------------------------------------------------------
+      # Step 4: DEPLOY INFRASTRUCTURE VIA TERRAFORM
+      # --------------------------------------------------------------------
+      # Terraform will also use the assumed OIDC role's temporary credentials.
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./infrastructure
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: ./infrastructure
