@@ -7,11 +7,12 @@ on:
     branches:
       - main
 
-  env:
-    ECR_REPOSITORY: momotaro-lex-bot
-    AWS_REGION: ca-central-1
-    IMAGE_TAG: ${{ github.sha }}
-
+# --- FIX #1: UN-INDENTED THIS ENTIRE BLOCK ---
+# The 'env' block must be at the top level, at the same indentation as 'name', 'on', and 'jobs'.
+env:
+  ECR_REPOSITORY: momotaro-lex-bot
+  AWS_REGION: ca-central-1
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   deploy:
@@ -21,25 +22,22 @@ jobs:
       contents: read
 
     steps:
+      # --- FIX #2: ADDED THE ESSENTIAL CHECKOUT STEP ---
+      # This step must come first to make your code available to the workflow.
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
+      # This step assumes a GitHub secret named 'AWS_IAM_ROLE_FOR_OIDC_ARN'
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_FOR_OIDC_ARN }}
-          aws-region: ca-central-1
+          aws-region: ${{ env.AWS_REGION }} # Using the env var for consistency
 
-      # --------------------------------------------------------------------
-      # Step 2: LOGIN TO AMAZON ECR
-      # --------------------------------------------------------------------
-      # This action automatically uses the temporary credentials from the OIDC role.
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         
-      # --------------------------------------------------------------------
-      # Step 3: BUILD, TAG, AND PUSH DOCKER IMAGE
-      # --------------------------------------------------------------------
-      # This step also automatically uses the temporary credentials.
       - name: Build, Tag, and Push Image to ECR
         id: build-image
         env:
@@ -51,10 +49,6 @@ jobs:
           docker push $ECR_REPOSITORY_URI:latest
           docker push $ECR_REPOSITORY_URI:${IMAGE_TAG}
 
-      # --------------------------------------------------------------------
-      # Step 4: DEPLOY INFRASTRUCTURE VIA TERRAFORM
-      # --------------------------------------------------------------------
-      # Terraform will also use the assumed OIDC role's temporary credentials.
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
