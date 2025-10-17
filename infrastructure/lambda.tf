@@ -76,13 +76,13 @@ resource "aws_iam_role_policy_attachment" "lex_fulfillment_attach" {
 resource "aws_lambda_function" "lex_fulfillment_handler" {
   function_name = "TableAILexFulfillmentHandler"
   role          = aws_iam_role.lex_fulfillment_role.arn
-  handler       = "app.lambda_handler"
-  runtime       = "python3.13"
   timeout       = 90
+  memory_size = 1024
 
-  # Use a placeholder package for initial creation. CI/CD will deploy the real code.
-  filename         = "../src/lambda_fulfillment.zip"
-  source_code_hash = filebase64sha256("../src/lambda_fulfillment.zip")
+  package_type = "Image"
+
+ image_uri = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/${aws_ecr_repository.momotaro_lex_bot.name}:latest"
+
 
   environment {
     variables = {
