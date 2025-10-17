@@ -13,3 +13,6 @@ data "aws_lambda_layer_version" "google" {
   layer_name = "googlegeminilayer"
 }
 
+data "aws_dynamodb_table" "orders" {
+  name = "momotaroOrdersDatabase" # <-- Make sure this is your exact table name
+}

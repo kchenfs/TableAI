@@ -107,6 +107,7 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
   environment {
     variables = {
       MENU_TABLE_NAME   = data.aws_dynamodb_table.menu.name
+      ORDERS_TABLE_NAME = data.aws_dynamodb_table.orders.name
       OPENROUTER_API_KEY = var.openrouter_api_key
       GOOGLE_API_KEY      = var.google_api_key
       S3_BUCKET_NAME      = data.aws_s3_bucket.momotaro-assets.bucket
@@ -117,4 +118,15 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
     Name    = "TableAI Lex Fulfillment Lambda"
     Project = "TableAI"
   }
+}
+
+resource "aws_lambda_permission" "lex_invoke" {
+  statement_id  = "AllowLexV2ToInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.lex_fulfillment_handler.function_name
+  principal     = "lexv2.amazonaws.com"
+
+  # IMPORTANT: You must replace the placeholders below with references to your
+  # Lex Bot and Bot Alias resources defined elsewhere in your Terraform code.
+  source_arn = "arn:aws:lex:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:bot-alias/S832QRVZP3/TSTALIASID"
 }
