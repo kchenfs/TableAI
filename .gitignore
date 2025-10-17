@@ -273,3 +273,7 @@ terraform.tfvars
 .ratelimiter.py
 
 .precompute_embeddings.py
+
+.create_index.py
+
+.ratelimiter.py

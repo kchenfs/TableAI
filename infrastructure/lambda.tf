@@ -55,7 +55,6 @@ resource "aws_iam_policy" "lex_fulfillment_policy" {
         Effect = "Allow"
         Resource = [
           data.aws_dynamodb_table.menu.arn,
-          data.aws_dynamodb_table.orders.arn
         ]
       },
       # Grant permission ONLY to the specific Claude 3 Haiku model.
@@ -88,8 +87,9 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
   environment {
     variables = {
       MENU_TABLE_NAME   = data.aws_dynamodb_table.menu.name
-      ORDERS_TABLENAME = data.aws_dynamodb_table.orders.name
-      OPENROUTER_API_KEY = var.openrouter_api_key 
+      OPENROUTER_API_KEY = var.openrouter_api_key
+      GOOGLE_API_KEY      = var.google_api_key
+      S3_BUCKET_NAME      = data.aws_s3_bucket.momotaro-assets.bucket
     }
   }
 
