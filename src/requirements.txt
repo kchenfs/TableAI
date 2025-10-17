@@ -1,2 +1,2 @@
 openai
-faiss
+faiss-cpu
