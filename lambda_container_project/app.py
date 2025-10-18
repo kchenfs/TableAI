@@ -512,16 +512,56 @@ def handle_dialog(event):
         if has_food and not has_drink and not slots.get('DrinkQuery'):
             return elicit_slot(event, session_attrs, 'DrinkQuery', "I've got your food order. Would you like anything to drink?")
 
+    # In your handle_dialog function, replace the existing DrinkQuery block with this one.
+
+# --- MODIFIED BLOCK to correctly parse drinks ---
     if slots.get('DrinkQuery') and slots['DrinkQuery'].get('value'):
         parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
         order_items = parsed_order.get('order_items', [])
         drink_text = slots['DrinkQuery']['value']['interpretedValue']
-        _, menu_lookup, embeddings_cache = get_menu()
-        best_key, _ = _fuzzy_find(_normalize_name(drink_text), menu_lookup, embeddings_cache)
-        if best_key:
-            menu_entry = menu_lookup[best_key]
-            order_items.append({"item_name": menu_entry['raw_item'].get('ItemName'), "normalized_key": best_key, "quantity": 1, "options": {}, "category": menu_entry.get('category')})
-        session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
+
+        # Don't do a simple fuzzy find. Use the powerful parser instead.
+        try:
+            # Re-use the OpenRouter parser for the drink query
+            parsed_drinks = invoke_openrouter_parser(drink_text)
+            _, menu_lookup, embeddings_cache = get_menu()
+
+            for drink_item in parsed_drinks.get('order_items', []):
+                if not isinstance(drink_item, dict): continue
+                parsed_name = drink_item.get('item_name', '')
+                if not parsed_name: continue
+                
+                quantity = int(drink_item.get('quantity', 1))
+                options = drink_item.get('options') if isinstance(drink_item.get('options'), dict) else {}
+                
+                # Find the best match for the parsed drink name
+                best_key, _ = _fuzzy_find(_normalize_name(parsed_name), menu_lookup, embeddings_cache)
+                if best_key:
+                    menu_entry = menu_lookup[best_key]
+                    
+                    # Combine options from parser and keyword detector
+                    all_detected_options = {**options, **_check_if_option_in_item_name(parsed_name, menu_entry)}
+                    validated_options = _normalize_options(all_detected_options, menu_entry)
+                    
+                    # Append the fully parsed drink item to the order
+                    order_items.append({
+                        "item_name": menu_entry['raw_item'].get('ItemName'),
+                        "normalized_key": best_key,
+                        "quantity": quantity,
+                        "options": validated_options,
+                        "category": menu_entry.get('category')
+                    })
+            
+            # We've processed the drink, so clear the slot to prevent re-processing
+            slots['DrinkQuery'] = None
+            
+            session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
+            
+        except Exception as e:
+            print(f"Error during DRINK parsing: {e}"); traceback.print_exc()
+            # If parsing fails, you might want to ask the user to clarify
+            return elicit_slot(event, session_attrs, 'DrinkQuery', "I had a little trouble understanding your drink order. Could you say it again?")
+    # --- END MODIFIED BLOCK ---
     
     if session_attrs.get('parsedOrder'):
         final_order_items = json.loads(session_attrs['parsedOrder']).get('order_items', [])
