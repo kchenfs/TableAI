@@ -24,16 +24,14 @@ ORDERS_TABLE_NAME = os.environ['ORDERS_TABLE_NAME']
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/llama-3.3-70b-instruct:free")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-# --- NEW: S3 Bucket for RAG files ---
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
-# ------------------------------------
 
 # AWS and AI model initialization
 dynamodb = boto3.resource('dynamodb')
-s3 = boto3.client('s3') # S3 client
+s3 = boto3.client('s3')
 menu_table = dynamodb.Table(MENU_TABLE_NAME)
 orders_table = dynamodb.Table(ORDERS_TABLE_NAME)
-_menu_cache_ttl_seconds = 3600  # Cache the menu for 1 hour
+_menu_cache_ttl_seconds = 3600
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -150,6 +148,28 @@ def _check_if_option_in_item_name(parsed_name, menu_entry):
             if choice_normalized in customer_words:
                 detected_options[opt_meta['raw_name']] = choice_normalized; break
     return detected_options
+
+# --- NEW HELPER FUNCTION --- to fix the duplicate option bug permanently
+def _normalize_options(detected_options, menu_entry):
+    """Maps detected option keys (like 'size') to the official menu option name (like 'Tray Size')."""
+    normalized_options = {}
+    official_options = menu_entry.get('options', {})
+
+    for detected_key, detected_value in detected_options.items():
+        norm_detected_key = _normalize_name(detected_key)
+        found_match = False
+        for official_key_norm, official_meta in official_options.items():
+            # Check if the detected key is the official one or very similar
+            if norm_detected_key == official_key_norm or norm_detected_key in official_key_norm:
+                normalized_options[official_meta['raw_name']] = detected_value
+                found_match = True
+                break
+        if not found_match:
+            # If no match, keep the original but this is less ideal
+            normalized_options[detected_key] = detected_value
+            
+    return normalized_options
+
 def get_rag_answer(event):
     global _rag_index, _rag_chunks
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
@@ -193,7 +213,6 @@ def get_rag_answer(event):
 
     return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': final_answer})
 
-# --- NEW FUNCTION --- Function to handle the entire allergy conversation
 def handle_allergy_intent(event):
     intent = event['sessionState']['intent']
     slots = intent.get('slots', {})
@@ -202,27 +221,20 @@ def handle_allergy_intent(event):
     has_allergy_confirmation = slots.get('hasAllergyConfirmation')
     allergy_details = slots.get('allergyDetails')
 
-    # SCENARIO B: User states their allergy directly ("I'm allergic to shellfish")
     if allergy_details and allergy_details.get('value'):
         specific_allergy = allergy_details['value']['interpretedValue']
         session_attrs['allergyInfo'] = specific_allergy
         print(f"ALLERGY: Captured details: {specific_allergy}")
-        # Fulfill the order now, including the allergy note
         return fulfill_order(event, allergy_info=specific_allergy)
 
-    # SCENARIO A: User says "Yes" and we need to ask for details
     if has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'Yes':
         print("ALLERGY: User confirmed they have an allergy. Eliciting details.")
-        # Elicit the allergyDetails slot using the prompt defined in the Lex console
         return elicit_slot(event, session_attrs, 'allergyDetails', "Understood. What are your allergies or dietary restrictions?")
 
-    # SCENARIO C: User says "No" or something negative
     if (has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'No'):
         print("ALLERGY: User confirmed no allergies.")
-        # Fulfill the order without any allergy notes
         return fulfill_order(event)
 
-    # LLM FALLBACK: If the user says something ambiguous like "just make sure there's no peanuts"
     transcript = event.get('inputTranscript', '')
     prompt = f"""
     A user was asked if they have allergies. They responded: "{transcript}". 
@@ -234,7 +246,6 @@ def handle_allergy_intent(event):
         )
         llm_decision = completion.choices[0].message.content.strip().upper()
         if llm_decision == 'YES':
-             # If the LLM thinks it's an allergy, treat the whole transcript as the detail
              session_attrs['allergyInfo'] = transcript
              print(f"ALLERGY: LLM captured details: {transcript}")
              return fulfill_order(event, allergy_info=transcript)
@@ -243,10 +254,8 @@ def handle_allergy_intent(event):
     except Exception as e:
         print(f"ALLERGY: LLM fallback check failed: {e}")
 
-    # FINAL FALLBACK: If we still don't understand, ask for a clear yes/no
     return elicit_slot(event, session_attrs, 'hasAllergyConfirmation', "I'm sorry, I didn't quite understand. Do you have any allergies? Please answer with yes or no.")
 
-# --- MODIFIED --- Main Lambda handler to route AllergyIntent and handle FAREWELL
 def lambda_handler(event, context):
     print("--- NEW INVOCATION ---")
     print(f"EVENT from Lex: {json.dumps(event)}")
@@ -254,7 +263,6 @@ def lambda_handler(event, context):
     intent_name = event['sessionState']['intent']['name']
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
 
-    # --- ROUTER LOGIC ---
     if intent_name == 'FallbackIntent':
         transcript = event.get('inputTranscript', '')
         user_intent = classify_user_intent(transcript)
@@ -262,7 +270,6 @@ def lambda_handler(event, context):
         if user_intent == 'QUESTION':
             print("HANDLER: Classified as QUESTION. Triggering RAG.")
             return get_rag_answer(event)
-
         elif user_intent == 'ORDER':
             print("HANDLER: Classified as ORDER. Transforming to OrderFood intent.")
             session_attrs['is_fallback_order'] = 'true'
@@ -272,19 +279,14 @@ def lambda_handler(event, context):
                 event['sessionState']['intent']['slots'] = {}
             event['sessionState']['intent']['slots']['OrderQuery'] = {'value': {'originalValue': transcript, 'interpretedValue': transcript, 'resolvedValues': []}, 'shape': 'Scalar'}
             return handle_dialog(event)
-
         elif user_intent == 'MODIFICATION':
             print("HANDLER: Classified as MODIFICATION. Triggering modification logic.")
             return handle_modification_request(event)
-        
-        # --- NEW --- Handle FAREWELL
         elif user_intent == 'FAREWELL':
             print("HANDLER: Classified as FAREWELL. Closing conversation.")
             message = "You're welcome! Have a great day."
             return close_dialog(event, {}, 'Fulfilled', {'contentType': 'PlainText', 'content': message})
-        # --- END NEW ---
-        
-        else: # Classifier was unsure
+        else:
             print("HANDLER: Classifier was unsure. Responding with help message.")
             message = "I'm sorry, I can only take orders or answer questions about the menu. How can I help?"
             return elicit_slot(event, {}, 'OrderQuery', message, reset=True)
@@ -306,13 +308,10 @@ def lambda_handler(event, context):
     if invocation_source == 'DialogCodeHook':
         return handle_dialog(event)
     elif invocation_source == 'FulfillmentCodeHook':
-        # NOTE: Fulfillment hook should ideally not be hit directly for OrderFood after the change.
-        # It's kept here as a final fallback.
         return fulfill_order(event)
     
     return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I couldn't handle your request."})
     
-# --- MODIFIED --- to include FAREWELL
 def classify_user_intent(transcript):
     print(f"CLASSIFIER: Classifying transcript: '{transcript}'")
     prompt = f"""
@@ -339,10 +338,10 @@ def classify_user_intent(transcript):
             return response
         else:
             print(f"CLASSIFIER: LLM returned unexpected classification: {response}")
-            return None # Unsure
+            return None
     except Exception as e:
         print(f"CLASSIFIER: Error during classification: {e}")
-        return None # Unsure
+        return None
         
 def handle_modification_request(event):
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
@@ -354,10 +353,7 @@ def handle_modification_request(event):
 
     current_order = json.loads(session_attrs['parsedOrder'])
     
-    if event['sessionState']['intent']['name'] == 'ModifyOrderIntent':
-        modification_request = event['sessionState']['intent']['slots']['ModificationRequest']['value']['interpretedValue']
-    else: 
-        modification_request = event.get('inputTranscript', '')
+    modification_request = event.get('inputTranscript', '')
 
     try:
         prompt = f"""
@@ -406,7 +402,6 @@ def handle_modification_request(event):
                             break
         
         session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
-
         return handle_dialog(event)
 
     except Exception as e:
@@ -415,29 +410,23 @@ def handle_modification_request(event):
         message = "I'm sorry, I had trouble understanding that change. Could you try rephrasing?"
         return elicit_slot(event, session_attrs, 'ModificationRequest', message)
         
-# --- MODIFIED --- to include allergy check and option duplication fix
 def handle_dialog(event):
     intent = event['sessionState']['intent']
     slots = intent.get('slots', {})
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
     confirmation_state = intent.get('confirmationState')
 
-    # --- MODIFIED: HAND-OFF to AllergyIntent ---
     if confirmation_state == 'Confirmed':
-        # Instead of calling delegate, we ask the allergy question and elicit a new intent
         message = "Great, I've got your order down. Before I place it with the kitchen, are there any allergies or dietary restrictions I should know about?"
         response = {
             'sessionState': {
-                'dialogAction': {
-                    'type': 'ElicitIntent' # Tells Lex to look for a new intent (AllergyIntent)
-                },
+                'dialogAction': {'type': 'ElicitIntent'},
                 'sessionAttributes': session_attrs 
             },
             'messages': [{'contentType': 'PlainText', 'content': message}]
         }
         print(f"RESPONSE to Lex: {json.dumps(response)}")
         return response
-    # --- END MODIFIED ---
 
     if confirmation_state == 'Denied':
         return elicit_slot(event, session_attrs, 'OrderQuery', "Okay — let's start over. What would you like to order?", reset=True)
@@ -451,10 +440,7 @@ def handle_dialog(event):
         for i, item in enumerate(order_items):
             if item.get('normalized_key') == current_item.get('normalized_key'):
                 if 'options' not in item or item['options'] is None: item['options'] = {}
-                # --- FIX: Prevent Option Duplication ---
-                if option_name_to_set not in item['options'] or item['options'][option_name_to_set] != choice_value:
-                     item['options'][option_name_to_set] = choice_value
-                # --- END FIX ---
+                item['options'][option_name_to_set] = choice_value
                 order_items[i] = item; break
         session_attrs['parsedOrder'] = json.dumps({"order_items": order_items}, cls=DecimalEncoder)
         slots['OptionChoice'] = None
@@ -478,8 +464,13 @@ def handle_dialog(event):
                 best_key, _ = _fuzzy_find(_normalize_name(parsed_name), menu_lookup, embeddings_cache)
                 if best_key:
                     menu_entry = menu_lookup[best_key]
-                    detected_options = _check_if_option_in_item_name(parsed_name, menu_entry)
-                    validated_options = {**detected_options, **options}
+                    
+                    # Combine options from both parser and keyword detector
+                    all_detected_options = {**options, **_check_if_option_in_item_name(parsed_name, menu_entry)}
+                    
+                    # --- MODIFIED --- Use the new normalization function
+                    validated_options = _normalize_options(all_detected_options, menu_entry)
+                    
                     normalized_items.append({"item_name": menu_entry['raw_item'].get('ItemName'), "normalized_key": best_key, "quantity": quantity, "options": validated_options, "category": menu_entry.get('category'), "price": menu_entry.get('price'), "item_number": menu_entry.get('item_number')})
                 else:
                     normalized_items.append({"item_name": parsed_name, "normalized_key": None, "quantity": quantity, "options": options})
@@ -508,7 +499,7 @@ def handle_dialog(event):
                 for opt_key_norm, opt_meta in entry['options'].items():
                     if opt_meta.get('required'):
                         provided_options = ni.get('options', {}) or {}
-                        is_provided = any(_normalize_name(k) == opt_key_norm or k == opt_meta.get('raw_name') for k in provided_options.keys())
+                        is_provided = any(k == opt_meta.get('raw_name') for k in provided_options.keys())
                         if not is_provided:
                             session_attrs['currentItemToConfigure'] = json.dumps(ni, cls=DecimalEncoder)
                             option_name = opt_meta.get('raw_name')
@@ -538,29 +529,33 @@ def handle_dialog(event):
         for item in final_order_items:
             options_str = ""
             if item.get('options'): 
-                options_str = " (" + ", ".join(f"{v}" for v in item['options'].values()) + ")"
+                # Use a set to get unique values for the summary string
+                unique_options = set(item['options'].values())
+                options_str = " (" + ", ".join(unique_options) + ")"
             summary_parts.append(f"{item['quantity']} {item['item_name']}{options_str}")
         summary = "Okay, I have: " + ", ".join(summary_parts) + ". Is that correct?"
         return confirm_intent(event, session_attrs, summary)
     return delegate(event, session_attrs)
     
-# --- MODIFIED --- to accept allergy_info and include it in the final message
 def fulfill_order(event, allergy_info=None):
     try:
         session_attrs = event['sessionState'].get('sessionAttributes', {})
         final_order_str = session_attrs.get('parsedOrder', '{}')
         final_order = json.loads(final_order_str)
         
-        order_summary = ", ".join([f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])])
+        summary_parts = []
+        for item in final_order.get('order_items', []):
+            options_str = ""
+            if item.get('options'): 
+                unique_options = set(item['options'].values())
+                options_str = " (" + ", ".join(unique_options) + ")"
+            summary_parts.append(f"{item['quantity']} {item['item_name']}{options_str}")
+        order_summary = ", ".join(summary_parts)
         
-        # Build the final message
         summary = f"Thank you! Your order for {order_summary} has been placed."
         if allergy_info:
             summary += f" We have noted your allergy information: {allergy_info}."
             
-        # You would implement your order saving/database logic here,
-        # ensuring you save the allergy_info along with the order details.
-
         return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
     except Exception as e:
         print(f"Error fulfilling order: {e}"); traceback.print_exc()
