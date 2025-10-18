@@ -213,6 +213,8 @@ def get_rag_answer(event):
 
     return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': final_answer})
 
+# In app.py
+
 def handle_allergy_intent(event):
     intent = event['sessionState']['intent']
     slots = intent.get('slots', {})
@@ -235,6 +237,7 @@ def handle_allergy_intent(event):
         print("ALLERGY: User confirmed no allergies.")
         return fulfill_order(event)
 
+    # --- THIS IS THE BLOCK TO CHANGE ---
     transcript = event.get('inputTranscript', '')
     prompt = f"""
     A user was asked if they have allergies. They responded: "{transcript}". 
@@ -245,17 +248,21 @@ def handle_allergy_intent(event):
             model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0
         )
         llm_decision = completion.choices[0].message.content.strip().upper()
+        
+        # --- MODIFIED LOGIC ---
         if llm_decision == 'YES':
-             session_attrs['allergyInfo'] = transcript
-             print(f"ALLERGY: LLM captured details: {transcript}")
-             return fulfill_order(event, allergy_info=transcript)
+             print("ALLERGY: LLM determined user has an allergy. Eliciting details.")
+             # Instead of fulfilling, ask the user what their allergy is.
+             return elicit_slot(event, session_attrs, 'allergyDetails', "Understood. What are your allergies or dietary restrictions?")
         elif llm_decision == 'NO':
              return fulfill_order(event)
+             
     except Exception as e:
         print(f"ALLERGY: LLM fallback check failed: {e}")
+    # --- END MODIFIED BLOCK ---
 
+    # This is the final fallback if the LLM is confused.
     return elicit_slot(event, session_attrs, 'hasAllergyConfirmation', "I'm sorry, I didn't quite understand. Do you have any allergies? Please answer with yes or no.")
-
 def lambda_handler(event, context):
     print("--- NEW INVOCATION ---")
     print(f"EVENT from Lex: {json.dumps(event)}")
