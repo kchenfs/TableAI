@@ -8,6 +8,7 @@ import re
 from openai import OpenAI
 import traceback
 import random
+# import uuid # You would need this if you implement the order saving logic
 
 # --- MODIFIED IMPORTS for Google Gemini ---
 import google.generativeai as genai
@@ -192,7 +193,60 @@ def get_rag_answer(event):
 
     return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': final_answer})
 
-# --- MODIFIED --- Main Lambda handler to route AllergyIntent
+# --- NEW FUNCTION --- Function to handle the entire allergy conversation
+def handle_allergy_intent(event):
+    intent = event['sessionState']['intent']
+    slots = intent.get('slots', {})
+    session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
+
+    has_allergy_confirmation = slots.get('hasAllergyConfirmation')
+    allergy_details = slots.get('allergyDetails')
+
+    # SCENARIO B: User states their allergy directly ("I'm allergic to shellfish")
+    if allergy_details and allergy_details.get('value'):
+        specific_allergy = allergy_details['value']['interpretedValue']
+        session_attrs['allergyInfo'] = specific_allergy
+        print(f"ALLERGY: Captured details: {specific_allergy}")
+        # Fulfill the order now, including the allergy note
+        return fulfill_order(event, allergy_info=specific_allergy)
+
+    # SCENARIO A: User says "Yes" and we need to ask for details
+    if has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'Yes':
+        print("ALLERGY: User confirmed they have an allergy. Eliciting details.")
+        # Elicit the allergyDetails slot using the prompt defined in the Lex console
+        return elicit_slot(event, session_attrs, 'allergyDetails', "Understood. What are your allergies or dietary restrictions?")
+
+    # SCENARIO C: User says "No" or something negative
+    if (has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'No'):
+        print("ALLERGY: User confirmed no allergies.")
+        # Fulfill the order without any allergy notes
+        return fulfill_order(event)
+
+    # LLM FALLBACK: If the user says something ambiguous like "just make sure there's no peanuts"
+    transcript = event.get('inputTranscript', '')
+    prompt = f"""
+    A user was asked if they have allergies. They responded: "{transcript}". 
+    Does this response indicate they have an allergy? Respond with a single word: YES, NO, or UNKNOWN.
+    """
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0
+        )
+        llm_decision = completion.choices[0].message.content.strip().upper()
+        if llm_decision == 'YES':
+             # If the LLM thinks it's an allergy, treat the whole transcript as the detail
+             session_attrs['allergyInfo'] = transcript
+             print(f"ALLERGY: LLM captured details: {transcript}")
+             return fulfill_order(event, allergy_info=transcript)
+        elif llm_decision == 'NO':
+             return fulfill_order(event)
+    except Exception as e:
+        print(f"ALLERGY: LLM fallback check failed: {e}")
+
+    # FINAL FALLBACK: If we still don't understand, ask for a clear yes/no
+    return elicit_slot(event, session_attrs, 'hasAllergyConfirmation', "I'm sorry, I didn't quite understand. Do you have any allergies? Please answer with yes or no.")
+
+# --- MODIFIED --- Main Lambda handler to route AllergyIntent and handle FAREWELL
 def lambda_handler(event, context):
     print("--- NEW INVOCATION ---")
     print(f"EVENT from Lex: {json.dumps(event)}")
@@ -217,12 +271,18 @@ def lambda_handler(event, context):
             if 'slots' not in event['sessionState']['intent']:
                 event['sessionState']['intent']['slots'] = {}
             event['sessionState']['intent']['slots']['OrderQuery'] = {'value': {'originalValue': transcript, 'interpretedValue': transcript, 'resolvedValues': []}, 'shape': 'Scalar'}
-            # This now correctly calls handle_dialog for the transformed intent
             return handle_dialog(event)
 
         elif user_intent == 'MODIFICATION':
             print("HANDLER: Classified as MODIFICATION. Triggering modification logic.")
             return handle_modification_request(event)
+        
+        # --- NEW --- Handle FAREWELL
+        elif user_intent == 'FAREWELL':
+            print("HANDLER: Classified as FAREWELL. Closing conversation.")
+            message = "You're welcome! Have a great day."
+            return close_dialog(event, {}, 'Fulfilled', {'contentType': 'PlainText', 'content': message})
+        # --- END NEW ---
         
         else: # Classifier was unsure
             print("HANDLER: Classifier was unsure. Responding with help message.")
@@ -232,37 +292,38 @@ def lambda_handler(event, context):
     if intent_name == 'GreetingIntent':
         greetings = ["Hello! I'm ready to take your order. What can I get for you?", "Hi there! What would you like to order today?", "Welcome! Tell me what you'd like to eat."]
         response_message = random.choice(greetings)
-        # Transition to OrderFood intent
         response = {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': 'OrderQuery'}, 'intent': {'name': 'OrderFood', 'slots': {'OrderQuery': None, 'DrinkQuery': None, 'OptionChoice': None}, 'state': 'InProgress'}, 'sessionAttributes': {}}, 'messages': [{'contentType': 'PlainText', 'content': response_message}]}
         print(f"RESPONSE to Lex: {json.dumps(response)}")
         return response
 
-    # --- NEW --- Route for the AllergyIntent
     if intent_name == 'AllergyIntent':
         return handle_allergy_intent(event)
         
     if intent_name == 'ModifyOrderIntent':
         return handle_modification_request(event)
 
-    # Default routing for OrderFood intent
     invocation_source = event.get('invocationSource')
     if invocation_source == 'DialogCodeHook':
         return handle_dialog(event)
     elif invocation_source == 'FulfillmentCodeHook':
-        # This will now be called by the allergy handler or directly if no allergies
+        # NOTE: Fulfillment hook should ideally not be hit directly for OrderFood after the change.
+        # It's kept here as a final fallback.
         return fulfill_order(event)
     
     return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I couldn't handle your request."})
-
+    
+# --- MODIFIED --- to include FAREWELL
 def classify_user_intent(transcript):
     print(f"CLASSIFIER: Classifying transcript: '{transcript}'")
     prompt = f"""
-    You are an intent classifier for a restaurant bot. Based on the user's input, classify it into one of three categories:
+    You are an intent classifier for a restaurant bot. Based on the user's input, classify it into one of four categories:
     - 'QUESTION': The user is asking for information (e.g., hours, ingredients, address, recommendations).
     - 'ORDER': The user is stating a food or drink they want to order.
     - 'MODIFICATION': The user wants to change an existing, unconfirmed order (e.g., add, remove, or change an item).
+    - 'FAREWELL': The user is saying something to end the conversation (e.g., "thank you", "bye", "that's all").
 
-    Respond with only one word: QUESTION, ORDER, or MODIFICATION.
+    Respond with ONLY ONE WORD: QUESTION, ORDER, MODIFICATION, or FAREWELL.
+    DO NOT provide any explanations or conversational text. Your entire response must be a single word.
 
     User input: "{transcript}"
     """
@@ -273,7 +334,7 @@ def classify_user_intent(transcript):
             temperature=0.0
         )
         response = completion.choices[0].message.content.strip().upper()
-        if response in ['QUESTION', 'ORDER', 'MODIFICATION']:
+        if response in ['QUESTION', 'ORDER', 'MODIFICATION', 'FAREWELL']:
             print(f"CLASSIFIER: LLM classified intent as: {response}")
             return response
         else:
@@ -345,8 +406,7 @@ def handle_modification_request(event):
                             break
         
         session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
-        
-        # After modifying, go back to the main dialog handler to re-evaluate the order
+
         return handle_dialog(event)
 
     except Exception as e:
@@ -354,74 +414,22 @@ def handle_modification_request(event):
         traceback.print_exc()
         message = "I'm sorry, I had trouble understanding that change. Could you try rephrasing?"
         return elicit_slot(event, session_attrs, 'ModificationRequest', message)
-
-# --- NEW --- Function to handle the entire allergy conversation
-def handle_allergy_intent(event):
-    intent = event['sessionState']['intent']
-    slots = intent.get('slots', {})
-    session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
-
-    # The slot names must match exactly what you created in the Lex console
-    has_allergy_confirmation = slots.get('hasAllergyConfirmation')
-    allergy_details = slots.get('allergyDetails')
-
-    # SCENARIO B: User states their allergy directly ("I'm allergic to shellfish")
-    if allergy_details and allergy_details.get('value'):
-        specific_allergy = allergy_details['value']['interpretedValue']
-        session_attrs['allergyInfo'] = specific_allergy
-        print(f"ALLERGY: Captured details: {specific_allergy}")
-        # Fulfill the order now, including the allergy note
-        return fulfill_order(event, allergy_info=specific_allergy)
-
-    # SCENARIO A: User says "Yes" and we need to ask for details
-    if has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'Yes':
-        print("ALLERGY: User confirmed they have an allergy. Eliciting details.")
-        # Elicit the allergyDetails slot using the prompt defined in the Lex console
-        return elicit_slot(event, session_attrs, 'allergyDetails', "Understood. What are your allergies or dietary restrictions?")
-
-    # SCENARIO C: User says "No" or something negative
-    if (has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'No'):
-        print("ALLERGY: User confirmed no allergies.")
-        # Fulfill the order without any allergy notes
-        return fulfill_order(event)
-
-    # LLM FALLBACK: If the user says something ambiguous like "just make sure there's no peanuts"
-    transcript = event.get('inputTranscript', '')
-    prompt = f"""
-    A user was asked if they have allergies. They responded: "{transcript}". 
-    Does this response indicate they have an allergy? Respond with a single word: YES, NO, or UNKNOWN.
-    """
-    try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0
-        )
-        llm_decision = completion.choices[0].message.content.strip().upper()
-        if llm_decision == 'YES':
-             # If the LLM thinks it's an allergy, treat the whole transcript as the detail
-             session_attrs['allergyInfo'] = transcript
-             print(f"ALLERGY: LLM captured details: {transcript}")
-             return fulfill_order(event, allergy_info=transcript)
-        elif llm_decision == 'NO':
-             return fulfill_order(event)
-    except Exception as e:
-        print(f"ALLERGY: LLM fallback check failed: {e}")
-
-    # FINAL FALLBACK: If we still don't understand, ask for a clear yes/no
-    return elicit_slot(event, session_attrs, 'hasAllergyConfirmation', "I'm sorry, I didn't quite understand. Do you have any allergies? Please answer with yes or no.")
-    
+        
+# --- MODIFIED --- to include allergy check and option duplication fix
 def handle_dialog(event):
     intent = event['sessionState']['intent']
     slots = intent.get('slots', {})
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
     confirmation_state = intent.get('confirmationState')
 
-    # --- MODIFIED --- This section now transitions to the allergy check
+    # --- MODIFIED: HAND-OFF to AllergyIntent ---
     if confirmation_state == 'Confirmed':
+        # Instead of calling delegate, we ask the allergy question and elicit a new intent
         message = "Great, I've got your order down. Before I place it with the kitchen, are there any allergies or dietary restrictions I should know about?"
         response = {
             'sessionState': {
                 'dialogAction': {
-                    'type': 'ElicitIntent'
+                    'type': 'ElicitIntent' # Tells Lex to look for a new intent (AllergyIntent)
                 },
                 'sessionAttributes': session_attrs 
             },
@@ -429,6 +437,7 @@ def handle_dialog(event):
         }
         print(f"RESPONSE to Lex: {json.dumps(response)}")
         return response
+    # --- END MODIFIED ---
 
     if confirmation_state == 'Denied':
         return elicit_slot(event, session_attrs, 'OrderQuery', "Okay — let's start over. What would you like to order?", reset=True)
@@ -442,7 +451,11 @@ def handle_dialog(event):
         for i, item in enumerate(order_items):
             if item.get('normalized_key') == current_item.get('normalized_key'):
                 if 'options' not in item or item['options'] is None: item['options'] = {}
-                item['options'][option_name_to_set] = choice_value; order_items[i] = item; break
+                # --- FIX: Prevent Option Duplication ---
+                if option_name_to_set not in item['options'] or item['options'][option_name_to_set] != choice_value:
+                     item['options'][option_name_to_set] = choice_value
+                # --- END FIX ---
+                order_items[i] = item; break
         session_attrs['parsedOrder'] = json.dumps({"order_items": order_items}, cls=DecimalEncoder)
         slots['OptionChoice'] = None
 
@@ -524,13 +537,14 @@ def handle_dialog(event):
         summary_parts = []
         for item in final_order_items:
             options_str = ""
-            if item.get('options'): options_str = " (" + ", ".join(f"{v}" for v in item['options'].values()) + ")"
+            if item.get('options'): 
+                options_str = " (" + ", ".join(f"{v}" for v in item['options'].values()) + ")"
             summary_parts.append(f"{item['quantity']} {item['item_name']}{options_str}")
         summary = "Okay, I have: " + ", ".join(summary_parts) + ". Is that correct?"
         return confirm_intent(event, session_attrs, summary)
     return delegate(event, session_attrs)
     
-# --- MODIFIED --- This function now accepts allergy info and includes it in the final message
+# --- MODIFIED --- to accept allergy_info and include it in the final message
 def fulfill_order(event, allergy_info=None):
     try:
         session_attrs = event['sessionState'].get('sessionAttributes', {})
@@ -544,17 +558,8 @@ def fulfill_order(event, allergy_info=None):
         if allergy_info:
             summary += f" We have noted your allergy information: {allergy_info}."
             
-        # You would save the order and allergy info to your DynamoDB table here
-        # For example:
-        # order_id = str(uuid.uuid4())
-        # orders_table.put_item(
-        #    Item={
-        #        'orderId': order_id,
-        #        'order': final_order,
-        #        'allergies': allergy_info,
-        #        'timestamp': int(time.time())
-        #    }
-        # )
+        # You would implement your order saving/database logic here,
+        # ensuring you save the allergy_info along with the order details.
 
         return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
     except Exception as e:
