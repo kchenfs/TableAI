@@ -50,7 +50,7 @@ _menu_cache_timestamp = 0
 _menu_raw = None
 _menu_lookup = None
 _menu_embeddings_cache = None
-_rag_index = None 
+_rag_index = None
 _rag_chunks = None
 
 class DecimalEncoder(json.JSONEncoder):
@@ -149,7 +149,6 @@ def _check_if_option_in_item_name(parsed_name, menu_entry):
             if choice_normalized in customer_words:
                 detected_options[opt_meta['raw_name']] = choice_normalized; break
     return detected_options
-# --- MODIFIED: get_rag_answer function ---
 def get_rag_answer(event):
     global _rag_index, _rag_chunks
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
@@ -157,28 +156,19 @@ def get_rag_answer(event):
     print(f"RAG: Getting answer for question: '{transcript}'")
 
     try:
-        # Step 1: Initialize the RAG index from the local image (and cache it)
         if _rag_index is None:
-            # The files are now local to the container, copied by the Dockerfile.
             print("RAG: Loading knowledge base from local container image.")
-            
-            # Read the FAISS index directly from the working directory.
             _rag_index = faiss.read_index('rag_index.faiss')
-            
-            # Read the chunks JSON file directly from the working directory.
             with open('rag_chunks.json', 'r') as f:
                 _rag_chunks = json.load(f)
-
             print("RAG: Index and chunks loaded successfully from local image.")
 
-        # Step 2: Perform the search
         query_embedding = genai.embed_content(model=GEMINI_EMBEDDING_MODEL, content=transcript, task_type="RETRIEVAL_QUERY")['embedding']
         distances, indices = _rag_index.search(np.array([query_embedding]), k=3)
         
         retrieved_context = "\n".join([_rag_chunks[i] for i in indices[0]])
         print(f"RAG: Retrieved context:\n{retrieved_context}")
 
-        # Step 3: Augment and Generate
         prompt = f"""
         Based *only* on the context provided below, answer the user's question. If the context does not contain the answer, say you don't have that information.
 
@@ -202,6 +192,7 @@ def get_rag_answer(event):
 
     return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': final_answer})
 
+# --- MODIFIED --- Main Lambda handler to route AllergyIntent
 def lambda_handler(event, context):
     print("--- NEW INVOCATION ---")
     print(f"EVENT from Lex: {json.dumps(event)}")
@@ -226,6 +217,7 @@ def lambda_handler(event, context):
             if 'slots' not in event['sessionState']['intent']:
                 event['sessionState']['intent']['slots'] = {}
             event['sessionState']['intent']['slots']['OrderQuery'] = {'value': {'originalValue': transcript, 'interpretedValue': transcript, 'resolvedValues': []}, 'shape': 'Scalar'}
+            # This now correctly calls handle_dialog for the transformed intent
             return handle_dialog(event)
 
         elif user_intent == 'MODIFICATION':
@@ -240,20 +232,28 @@ def lambda_handler(event, context):
     if intent_name == 'GreetingIntent':
         greetings = ["Hello! I'm ready to take your order. What can I get for you?", "Hi there! What would you like to order today?", "Welcome! Tell me what you'd like to eat."]
         response_message = random.choice(greetings)
+        # Transition to OrderFood intent
         response = {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': 'OrderQuery'}, 'intent': {'name': 'OrderFood', 'slots': {'OrderQuery': None, 'DrinkQuery': None, 'OptionChoice': None}, 'state': 'InProgress'}, 'sessionAttributes': {}}, 'messages': [{'contentType': 'PlainText', 'content': response_message}]}
         print(f"RESPONSE to Lex: {json.dumps(response)}")
         return response
+
+    # --- NEW --- Route for the AllergyIntent
+    if intent_name == 'AllergyIntent':
+        return handle_allergy_intent(event)
         
     if intent_name == 'ModifyOrderIntent':
         return handle_modification_request(event)
 
+    # Default routing for OrderFood intent
     invocation_source = event.get('invocationSource')
     if invocation_source == 'DialogCodeHook':
         return handle_dialog(event)
     elif invocation_source == 'FulfillmentCodeHook':
+        # This will now be called by the allergy handler or directly if no allergies
         return fulfill_order(event)
     
     return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "Sorry, I couldn't handle your request."})
+
 def classify_user_intent(transcript):
     print(f"CLASSIFIER: Classifying transcript: '{transcript}'")
     prompt = f"""
@@ -282,6 +282,7 @@ def classify_user_intent(transcript):
     except Exception as e:
         print(f"CLASSIFIER: Error during classification: {e}")
         return None # Unsure
+        
 def handle_modification_request(event):
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
     print(f"MODIFICATION: Handling modification request.")
@@ -344,7 +345,8 @@ def handle_modification_request(event):
                             break
         
         session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
-
+        
+        # After modifying, go back to the main dialog handler to re-evaluate the order
         return handle_dialog(event)
 
     except Exception as e:
@@ -352,14 +354,82 @@ def handle_modification_request(event):
         traceback.print_exc()
         message = "I'm sorry, I had trouble understanding that change. Could you try rephrasing?"
         return elicit_slot(event, session_attrs, 'ModificationRequest', message)
+
+# --- NEW --- Function to handle the entire allergy conversation
+def handle_allergy_intent(event):
+    intent = event['sessionState']['intent']
+    slots = intent.get('slots', {})
+    session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
+
+    # The slot names must match exactly what you created in the Lex console
+    has_allergy_confirmation = slots.get('hasAllergyConfirmation')
+    allergy_details = slots.get('allergyDetails')
+
+    # SCENARIO B: User states their allergy directly ("I'm allergic to shellfish")
+    if allergy_details and allergy_details.get('value'):
+        specific_allergy = allergy_details['value']['interpretedValue']
+        session_attrs['allergyInfo'] = specific_allergy
+        print(f"ALLERGY: Captured details: {specific_allergy}")
+        # Fulfill the order now, including the allergy note
+        return fulfill_order(event, allergy_info=specific_allergy)
+
+    # SCENARIO A: User says "Yes" and we need to ask for details
+    if has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'Yes':
+        print("ALLERGY: User confirmed they have an allergy. Eliciting details.")
+        # Elicit the allergyDetails slot using the prompt defined in the Lex console
+        return elicit_slot(event, session_attrs, 'allergyDetails', "Understood. What are your allergies or dietary restrictions?")
+
+    # SCENARIO C: User says "No" or something negative
+    if (has_allergy_confirmation and has_allergy_confirmation.get('value') and has_allergy_confirmation['value']['interpretedValue'] == 'No'):
+        print("ALLERGY: User confirmed no allergies.")
+        # Fulfill the order without any allergy notes
+        return fulfill_order(event)
+
+    # LLM FALLBACK: If the user says something ambiguous like "just make sure there's no peanuts"
+    transcript = event.get('inputTranscript', '')
+    prompt = f"""
+    A user was asked if they have allergies. They responded: "{transcript}". 
+    Does this response indicate they have an allergy? Respond with a single word: YES, NO, or UNKNOWN.
+    """
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0
+        )
+        llm_decision = completion.choices[0].message.content.strip().upper()
+        if llm_decision == 'YES':
+             # If the LLM thinks it's an allergy, treat the whole transcript as the detail
+             session_attrs['allergyInfo'] = transcript
+             print(f"ALLERGY: LLM captured details: {transcript}")
+             return fulfill_order(event, allergy_info=transcript)
+        elif llm_decision == 'NO':
+             return fulfill_order(event)
+    except Exception as e:
+        print(f"ALLERGY: LLM fallback check failed: {e}")
+
+    # FINAL FALLBACK: If we still don't understand, ask for a clear yes/no
+    return elicit_slot(event, session_attrs, 'hasAllergyConfirmation', "I'm sorry, I didn't quite understand. Do you have any allergies? Please answer with yes or no.")
+    
 def handle_dialog(event):
     intent = event['sessionState']['intent']
     slots = intent.get('slots', {})
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
     confirmation_state = intent.get('confirmationState')
 
+    # --- MODIFIED --- This section now transitions to the allergy check
     if confirmation_state == 'Confirmed':
-        return delegate(event, session_attrs)
+        message = "Great, I've got your order down. Before I place it with the kitchen, are there any allergies or dietary restrictions I should know about?"
+        response = {
+            'sessionState': {
+                'dialogAction': {
+                    'type': 'ElicitIntent'
+                },
+                'sessionAttributes': session_attrs 
+            },
+            'messages': [{'contentType': 'PlainText', 'content': message}]
+        }
+        print(f"RESPONSE to Lex: {json.dumps(response)}")
+        return response
+
     if confirmation_state == 'Denied':
         return elicit_slot(event, session_attrs, 'OrderQuery', "Okay — let's start over. What would you like to order?", reset=True)
 
@@ -459,16 +529,38 @@ def handle_dialog(event):
         summary = "Okay, I have: " + ", ".join(summary_parts) + ". Is that correct?"
         return confirm_intent(event, session_attrs, summary)
     return delegate(event, session_attrs)
-def fulfill_order(event):
+    
+# --- MODIFIED --- This function now accepts allergy info and includes it in the final message
+def fulfill_order(event, allergy_info=None):
     try:
         session_attrs = event['sessionState'].get('sessionAttributes', {})
         final_order_str = session_attrs.get('parsedOrder', '{}')
         final_order = json.loads(final_order_str)
-        summary = "Thank you! Your order for " + ", ".join([f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])]) + " has been placed."
+        
+        order_summary = ", ".join([f"{item['quantity']} {item['item_name']}" for item in final_order.get('order_items', [])])
+        
+        # Build the final message
+        summary = f"Thank you! Your order for {order_summary} has been placed."
+        if allergy_info:
+            summary += f" We have noted your allergy information: {allergy_info}."
+            
+        # You would save the order and allergy info to your DynamoDB table here
+        # For example:
+        # order_id = str(uuid.uuid4())
+        # orders_table.put_item(
+        #    Item={
+        #        'orderId': order_id,
+        #        'order': final_order,
+        #        'allergies': allergy_info,
+        #        'timestamp': int(time.time())
+        #    }
+        # )
+
         return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
     except Exception as e:
         print(f"Error fulfilling order: {e}"); traceback.print_exc()
         return close_dialog(event, event['sessionState'].get('sessionAttributes', {}), 'Failed', {'contentType': 'PlainText', 'content': "I encountered an error while finalizing your order."})
+
 def _extract_json_from_text(text):
     if not text: return None
     try: json.loads(text); return text
@@ -523,4 +615,3 @@ def close_dialog(event, session_attrs, fulfillment_state, message):
     response = {'sessionState': {'dialogAction': {'type': 'Close'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [message]}
     print(f"RESPONSE to Lex: {json.dumps(response)}")
     return response
-
