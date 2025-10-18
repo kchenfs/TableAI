@@ -149,7 +149,6 @@ def _check_if_option_in_item_name(parsed_name, menu_entry):
                 detected_options[opt_meta['raw_name']] = choice_normalized; break
     return detected_options
 
-# --- NEW HELPER FUNCTION --- to fix the duplicate option bug permanently
 def _normalize_options(detected_options, menu_entry):
     """Maps detected option keys (like 'size') to the official menu option name (like 'Tray Size')."""
     normalized_options = {}
@@ -159,13 +158,11 @@ def _normalize_options(detected_options, menu_entry):
         norm_detected_key = _normalize_name(detected_key)
         found_match = False
         for official_key_norm, official_meta in official_options.items():
-            # Check if the detected key is the official one or very similar
             if norm_detected_key == official_key_norm or norm_detected_key in official_key_norm:
                 normalized_options[official_meta['raw_name']] = detected_value
                 found_match = True
                 break
         if not found_match:
-            # If no match, keep the original but this is less ideal
             normalized_options[detected_key] = detected_value
             
     return normalized_options
@@ -213,8 +210,6 @@ def get_rag_answer(event):
 
     return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': final_answer})
 
-# In app.py
-
 def handle_allergy_intent(event):
     intent = event['sessionState']['intent']
     slots = intent.get('slots', {})
@@ -237,7 +232,6 @@ def handle_allergy_intent(event):
         print("ALLERGY: User confirmed no allergies.")
         return fulfill_order(event)
 
-    # --- THIS IS THE BLOCK TO CHANGE ---
     transcript = event.get('inputTranscript', '')
     prompt = f"""
     A user was asked if they have allergies. They responded: "{transcript}". 
@@ -249,19 +243,15 @@ def handle_allergy_intent(event):
         )
         llm_decision = completion.choices[0].message.content.strip().upper()
         
-        # --- MODIFIED LOGIC ---
         if llm_decision == 'YES':
              print("ALLERGY: LLM determined user has an allergy. Eliciting details.")
-             # Instead of fulfilling, ask the user what their allergy is.
              return elicit_slot(event, session_attrs, 'allergyDetails', "Understood. What are your allergies or dietary restrictions?")
         elif llm_decision == 'NO':
              return fulfill_order(event)
              
     except Exception as e:
         print(f"ALLERGY: LLM fallback check failed: {e}")
-    # --- END MODIFIED BLOCK ---
 
-    # This is the final fallback if the LLM is confused.
     return elicit_slot(event, session_attrs, 'hasAllergyConfirmation', "I'm sorry, I didn't quite understand. Do you have any allergies? Please answer with yes or no.")
 def lambda_handler(event, context):
     print("--- NEW INVOCATION ---")
@@ -423,6 +413,8 @@ def handle_dialog(event):
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
     confirmation_state = intent.get('confirmationState')
 
+    # --- 1. Handle Terminal Confirmation State ---
+    # This is the final user response to the order confirmation.
     if confirmation_state == 'Confirmed':
         message = "Great, I've got your order down. Before I place it with the kitchen, are there any allergies or dietary restrictions I should know about?"
         response = {
@@ -438,6 +430,8 @@ def handle_dialog(event):
     if confirmation_state == 'Denied':
         return elicit_slot(event, session_attrs, 'OrderQuery', "Okay — let's start over. What would you like to order?", reset=True)
 
+    # --- 2. Handle User Providing an Option ---
+    # This block runs when the user is answering a question about a specific option.
     if session_attrs.get('currentItemToConfigure') and slots.get('OptionChoice') and slots.get('OptionChoice').get('value'):
         current_item = json.loads(session_attrs.pop('currentItemToConfigure'))
         option_name_to_set = session_attrs.pop('optionToConfigure')
@@ -450,16 +444,16 @@ def handle_dialog(event):
                 item['options'][option_name_to_set] = choice_value
                 order_items[i] = item; break
         session_attrs['parsedOrder'] = json.dumps({"order_items": order_items}, cls=DecimalEncoder)
-        slots['OptionChoice'] = None
+        slots['OptionChoice'] = None # Clear the slot so we don't re-process it
 
-    if not slots.get('OrderQuery') and not session_attrs.get('parsedOrder'):
-        return elicit_slot(event, session_attrs, 'OrderQuery', "Sure — what would you like to order?")
-
+    # --- 3. Parse Initial Food Order & Drink Order ---
+    # These blocks update the order state but do not return a response yet.
+    
+    # A. Parse the main food order (only runs once at the beginning).
     if slots.get('OrderQuery') and not session_attrs.get('initialParseComplete'):
         raw_order_text = slots['OrderQuery']['value']['interpretedValue']
         try:
             parsed_result = invoke_openrouter_parser(raw_order_text)
-            
             normalized_items = []
             _, menu_lookup, embeddings_cache = get_menu()
             for it in parsed_result.get('order_items', []):
@@ -471,19 +465,13 @@ def handle_dialog(event):
                 best_key, _ = _fuzzy_find(_normalize_name(parsed_name), menu_lookup, embeddings_cache)
                 if best_key:
                     menu_entry = menu_lookup[best_key]
-                    
-                    # Combine options from both parser and keyword detector
                     all_detected_options = {**options, **_check_if_option_in_item_name(parsed_name, menu_entry)}
-                    
-                    # --- MODIFIED --- Use the new normalization function
                     validated_options = _normalize_options(all_detected_options, menu_entry)
-                    
                     normalized_items.append({"item_name": menu_entry['raw_item'].get('ItemName'), "normalized_key": best_key, "quantity": quantity, "options": validated_options, "category": menu_entry.get('category'), "price": menu_entry.get('price'), "item_number": menu_entry.get('item_number')})
                 else:
                     normalized_items.append({"item_name": parsed_name, "normalized_key": None, "quantity": quantity, "options": options})
             
             if session_attrs.pop('is_fallback_order', None) and not any(item.get('normalized_key') for item in normalized_items):
-                print("MITIGATION: Fallback triggered but no valid menu items found.")
                 message = "I'm sorry, I can only take food and drink orders. I didn't recognize any menu items in your request. Could you try again?"
                 return elicit_slot(event, {}, 'OrderQuery', message, reset=True)
                 
@@ -492,96 +480,83 @@ def handle_dialog(event):
         except Exception as e:
             print(f"Error during parsing: {e}"); traceback.print_exc()
             return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText', 'content': "I had trouble understanding that. Could you please try again?"})
-    
+
+    # B. Parse a drink order if one was provided in this turn.
+    if slots.get('DrinkQuery') and slots['DrinkQuery'].get('value'):
+        parsed_order = json.loads(session_attrs.get('parsedOrder', '{"order_items": []}'))
+        order_items = parsed_order.get('order_items', [])
+        drink_text = slots['DrinkQuery']['value']['interpretedValue']
+        try:
+            parsed_drinks = invoke_openrouter_parser(drink_text)
+            _, menu_lookup, embeddings_cache = get_menu()
+            for drink_item in parsed_drinks.get('order_items', []):
+                parsed_name = drink_item.get('item_name', '')
+                if not parsed_name: continue
+                quantity = int(drink_item.get('quantity', 1))
+                options = drink_item.get('options', {})
+                best_key, _ = _fuzzy_find(_normalize_name(parsed_name), menu_lookup, embeddings_cache)
+                if best_key:
+                    menu_entry = menu_lookup[best_key]
+                    all_detected_options = {**options, **_check_if_option_in_item_name(parsed_name, menu_entry)}
+                    validated_options = _normalize_options(all_detected_options, menu_entry)
+                    order_items.append({"item_name": menu_entry['raw_item'].get('ItemName'), "normalized_key": best_key, "quantity": quantity, "options": validated_options, "category": menu_entry.get('category')})
+            
+            slots['DrinkQuery'] = None # Clear the slot
+            session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
+        except Exception as e:
+            print(f"Error during DRINK parsing: {e}"); traceback.print_exc()
+            return elicit_slot(event, session_attrs, 'DrinkQuery', "I had a little trouble understanding your drink order. Could you say it again?")
+
+    # --- 4. Central Validation and Next Step Logic ---
+    # This block now runs AFTER any potential order modifications have been made.
     if session_attrs.get('parsedOrder'):
         current_order = json.loads(session_attrs['parsedOrder'])
         normalized_items = current_order.get('order_items', [])
         _, menu_lookup, _ = get_menu()
+
+        # A. Check for any items that are not on the menu.
         unmatched = [i for i in normalized_items if not i.get('normalized_key')]
         if unmatched:
             return elicit_slot(event, session_attrs, 'OrderQuery', f"I couldn't find '{unmatched[0]['item_name']}' on the menu. Could you clarify that part of your order?")
+
+        # B. Loop through ALL items to find the FIRST missing required option.
         for ni in normalized_items:
             if ni.get('normalized_key'):
                 entry = menu_lookup[ni['normalized_key']]
                 for opt_key_norm, opt_meta in entry['options'].items():
                     if opt_meta.get('required'):
                         provided_options = ni.get('options', {}) or {}
-                        is_provided = any(k == opt_meta.get('raw_name') for k in provided_options.keys())
-                        if not is_provided:
+                        # Check if the official option name is in the provided options keys
+                        if opt_meta.get('raw_name') not in provided_options:
                             session_attrs['currentItemToConfigure'] = json.dumps(ni, cls=DecimalEncoder)
                             option_name = opt_meta.get('raw_name')
                             session_attrs['optionToConfigure'] = option_name
                             choices_text = ", ".join(opt_meta.get('choices', []))
                             message = f"For your {ni['item_name']}, which {option_name} would you like? Choices are: {choices_text}."
                             return elicit_slot(event, session_attrs, 'OptionChoice', message)
+        
+        # C. If all items are valid, check if we should prompt for a drink.
         has_food = any(i.get('category') and 'drink' not in str(i.get('category','')).lower() for i in normalized_items)
         has_drink = any(i.get('category') and 'drink' in str(i.get('category','')).lower() for i in normalized_items)
-        if has_food and not has_drink and not slots.get('DrinkQuery'):
+        if has_food and not has_drink:
             return elicit_slot(event, session_attrs, 'DrinkQuery', "I've got your food order. Would you like anything to drink?")
 
-    # In your handle_dialog function, replace the existing DrinkQuery block with this one.
-
-# --- MODIFIED BLOCK to correctly parse drinks ---
-    if slots.get('DrinkQuery') and slots['DrinkQuery'].get('value'):
-        parsed_order = json.loads(session_attrs.get('parsedOrder', '{}'))
-        order_items = parsed_order.get('order_items', [])
-        drink_text = slots['DrinkQuery']['value']['interpretedValue']
-
-        # Don't do a simple fuzzy find. Use the powerful parser instead.
-        try:
-            # Re-use the OpenRouter parser for the drink query
-            parsed_drinks = invoke_openrouter_parser(drink_text)
-            _, menu_lookup, embeddings_cache = get_menu()
-
-            for drink_item in parsed_drinks.get('order_items', []):
-                if not isinstance(drink_item, dict): continue
-                parsed_name = drink_item.get('item_name', '')
-                if not parsed_name: continue
-                
-                quantity = int(drink_item.get('quantity', 1))
-                options = drink_item.get('options') if isinstance(drink_item.get('options'), dict) else {}
-                
-                # Find the best match for the parsed drink name
-                best_key, _ = _fuzzy_find(_normalize_name(parsed_name), menu_lookup, embeddings_cache)
-                if best_key:
-                    menu_entry = menu_lookup[best_key]
-                    
-                    # Combine options from parser and keyword detector
-                    all_detected_options = {**options, **_check_if_option_in_item_name(parsed_name, menu_entry)}
-                    validated_options = _normalize_options(all_detected_options, menu_entry)
-                    
-                    # Append the fully parsed drink item to the order
-                    order_items.append({
-                        "item_name": menu_entry['raw_item'].get('ItemName'),
-                        "normalized_key": best_key,
-                        "quantity": quantity,
-                        "options": validated_options,
-                        "category": menu_entry.get('category')
-                    })
-            
-            # We've processed the drink, so clear the slot to prevent re-processing
-            slots['DrinkQuery'] = None
-            
-            session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
-            
-        except Exception as e:
-            print(f"Error during DRINK parsing: {e}"); traceback.print_exc()
-            # If parsing fails, you might want to ask the user to clarify
-            return elicit_slot(event, session_attrs, 'DrinkQuery', "I had a little trouble understanding your drink order. Could you say it again?")
-    # --- END MODIFIED BLOCK ---
-    
-    if session_attrs.get('parsedOrder'):
-        final_order_items = json.loads(session_attrs['parsedOrder']).get('order_items', [])
+        # D. If the order is fully valid and complete, generate the confirmation prompt.
         summary_parts = []
-        for item in final_order_items:
+        for item in normalized_items:
             options_str = ""
             if item.get('options'): 
-                # Use a set to get unique values for the summary string
                 unique_options = set(item['options'].values())
                 options_str = " (" + ", ".join(unique_options) + ")"
             summary_parts.append(f"{item['quantity']} {item['item_name']}{options_str}")
         summary = "Okay, I have: " + ", ".join(summary_parts) + ". Is that correct?"
         return confirm_intent(event, session_attrs, summary)
+
+    # Fallback if no order has been started
+    if not slots.get('OrderQuery') and not session_attrs.get('parsedOrder'):
+        return elicit_slot(event, session_attrs, 'OrderQuery', "Sure — what would you like to order?")
+
+    # Delegate to Lex if no other action is taken
     return delegate(event, session_attrs)
     
 def fulfill_order(event, allergy_info=None):
