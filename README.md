@@ -17,7 +17,7 @@ This project is a fully serverless, AI-enhanced ordering system built on AWS. It
 
 ## Tech Stack
 
-* **Conversational AI:** Amazon Lex V2, Amazon Bedrock
+* **Conversational AI:** Amazon Lex V2, Llama 3.3 model, and gemini embeding model
 * **Compute:** AWS Lambda (Python)
 * **Database:** Amazon DynamoDB
 * **Identity:** Amazon Cognito Identity Pools
