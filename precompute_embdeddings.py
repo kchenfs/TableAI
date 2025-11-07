@@ -6,7 +6,7 @@ import time
 # --- Configuration ---
 MENU_TABLE_NAME = 'MomotaroSushiMenu_DB'   # Your DynamoDB table
 MODEL_NAME = 'models/embedding-001'        # Gemini embedding model
-API_KEY = 'U'            # Replace with your Gemini API key
+API_KEY = 'A'            # Replace with your Gemini API key
 BATCH_SIZE = 10                            # Adjust for speed vs API limit
 
 # --- Setup Clients ---
