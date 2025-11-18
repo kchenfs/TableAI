@@ -71,4 +71,33 @@ graph TD
 🧠 The AI Pipeline: How it Works
 TableAI utilizes a "Router-Retriever-Generator" pattern. When a user speaks, the backend logic dynamically switches between Order Fulfillment and Knowledge Retrieval.
 
+```mermaid
+sequenceDiagram
+    actor User
+    participant Lex as Amazon Lex
+    participant Lambda as AWS Lambda
+    participant LLM as Llama 3.3
+    participant Embed as Gemini API
+    participant DB as DynamoDB
+
+    User->>Lex: "Where is the restaurant located?"
+    Lex->>Lambda: Invoke Fulfillment Hook
     
+    rect rgb(240, 248, 255)
+    note right of Lambda: Step 1: Intent Classification
+    Lambda->>LLM: Prompt: "Is this an order or a question?"
+    LLM-->>Lambda: Result: "QUESTION: Store Location"
+    end
+
+    rect rgb(255, 240, 245)
+    note right of Lambda: Step 2: Semantic Retrieval
+    Lambda->>Embed: Send "restaurant location"
+    Embed-->>Lambda: Return Vector
+    Lambda->>DB: Query (Cosine Similarity)
+    DB-->>Lambda: Match Found: { "type": "info", "answer": "123 Main St..." }
+    end
+
+    Lambda-->>Lex: Return Answer
+    Lex-->>User: "We are located at 123 Main St, Downtown."
+```
+
