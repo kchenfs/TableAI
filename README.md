@@ -1,167 +1,139 @@
-# TableAI: AI-Powered Voice & Text Ordering System
+# TableAI: Serverless Generative AI Ordering System
 
-This project is a fully serverless, AI-enhanced ordering system built on AWS. It allows users to order from a menu using natural language via text or voice, without needing to sign in.
+**TableAI** is a fully serverless, event-driven conversational agent designed to streamline restaurant ordering. Unlike rigid, rule-based chatbots, TableAI leverages **Large Language Models (LLMs)** and **Vector Embeddings** to understand natural language, handle complex multi-item orders, and perform semantic matching against a dynamic menu database.
 
-## Architecture Diagram
+Built entirely on **AWS** using **Terraform**, this project demonstrates modern cloud-native architecture patterns including **RAG (Retrieval-Augmented Generation)** and **Hybrid Search**.
 
-!
-*(Include the Mermaid diagram image here)*
+---
 
-## Core Features
+## 🏗 System Architecture
 
-* **Zero-Friction Ordering:** No login required, thanks to temporary guest credentials from Amazon Cognito.
-* **Natural Language Understanding:** Uses Amazon Lex for conversation flow and Amazon Bedrock (with Claude) for advanced NLU and menu recommendations.
-* **Serverless & Scalable:** Built entirely on serverless AWS services like Lambda, DynamoDB, and Lex.
-* **Infrastructure as Code (IaC):** All infrastructure is defined and managed using Terraform for automated, repeatable deployments.
-* **Automated Deployments:** A CI/CD pipeline using GitHub Actions automatically deploys infrastructure and code changes.
+This system follows a serverless microservices pattern, utilizing **Amazon Lex** for state management and **AWS Lambda** for orchestration, while offloading cognitive tasks to specialized AI models via API.
 
-## Tech Stack
+```mermaid
+graph TD
+    %% Styles
+    classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:white;
+    classDef ai fill:#8A2BE2,stroke:#4B0082,stroke-width:2px,color:white;
+    classDef ext fill:#eeeeee,stroke:#333,stroke-width:2px;
+    classDef user fill:#fff,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5;
 
-* **Conversational AI:** Amazon Lex V2, Llama 3.3 model, and gemini embeding model
-* **Compute:** AWS Lambda (Python)
-* **Database:** Amazon DynamoDB
-* **Identity:** Amazon Cognito Identity Pools
-* **Infrastructure & Automation:** Terraform, GitHub Actions
-* **Frontend:** HTML/JS on AWS S3 & CloudFront
+    %% Actors
+    User((User)):::user
 
-## Getting Started
+    %% AWS Cloud Environment
+    subgraph AWS_Cloud [AWS Cloud Environment]
+        direction TB
+        Lex[Amazon Lex V2<br/>(ASR & NLU)]:::aws
+        Lambda[AWS Lambda<br/>(Orchestration Logic)]:::aws
+        DDB[(Amazon DynamoDB<br/>Menu Items + Vectors)]:::aws
+        Cognito[Amazon Cognito<br/>(Guest Identity)]:::aws
+    end
 
-### Prerequisites
-* AWS Account
-* Terraform installed
-* AWS CLI configured
+    %% External AI Services
+    subgraph AI_Services [External AI APIs]
+        Llama[OpenRouter API<br/>Llama 3.3 (Reasoning)]:::ai
+        Gemini[Google Gemini API<br/>Embeddings]:::ai
+    end
 
-### Deployment
-1. Clone the repository: `git clone ...`
-2. Navigate to the `infrastructure` directory: `cd infrastructure`
-3. Initialize Terraform: `terraform init`
-4. Deploy the stack: `terraform apply`
+    %% Future Integration
+    subgraph External_App [External Integration]
+        TableTap[TableTap E-Commerce<br/>(Checkout Flow)]:::ext
+    end
 
-*(Add more detailed steps as you build)*
+    %% Connections
+    User --> |"Voice or Text"| Lex
+    Lex -.-> |"Auth Check"| Cognito
+    Lex --> |"JSON Event"| Lambda
+    
+    %% AI Logic Loop
+    Lambda --> |"1. Raw Text"| Llama
+    Llama --> |"2. Parsed JSON"| Lambda
+    
+    Lambda --> |"3. Item Name"| Gemini
+    Gemini --> |"4. Vector Embedding"| Lambda
+    
+    %% Database Check
+    Lambda <--> |"5. Similarity Search"| DDB
+    
+    %% Response
+    Lambda --> |"6. Fulfillment"| Lex
+    Lex --> |"Response"| User
 
+    %% Future Path
+    Lambda -.-> |"Future: POST /checkout"| TableTap
 
+    %% Link Styling
+    linkStyle 10 stroke-width:2px,fill:none,stroke:#FF9900,stroke-dasharray: 5 5;
+```
+🧠 The AI Pipeline: How it Works
+TableAI utilizes a "Router-Retriever-Generator" pattern. When a user speaks, the backend logic dynamically switches between Order Fulfillment and Knowledge Retrieval.
 
-[Amazon Lex]  
-  ↓
-[AWS Lambda] — receives user message → "2 dragon rolls and a Nestea"
+```mermaid
+sequenceDiagram
+    actor User
+    participant Lex as Amazon Lex
+    participant Lambda as AWS Lambda
+    participant LLM as Llama 3.3
+    participant Embed as Gemini API
+    participant DB as DynamoDB
 
-  Step 1️⃣: Invoke LLM
-     ↓
-  [LLM API via OpenRouter or Bedrock or OpenAI]
-     ↳ Task: Parse free-form text → structured JSON
-         → {"order_items": [{"item_name": "dragon roll", "quantity": 2},
-                            {"item_name": "nestea", "quantity": 1}]}
+    User->>Lex: "Where is the restaurant located?"
+    Lex->>Lambda: Invoke Fulfillment Hook
+    
+    rect rgb(240, 248, 255)
+    note right of Lambda: Step 1: Intent Classification
+    Lambda->>LLM: Prompt: "Is this an order or a question?"
+    LLM-->>Lambda: Result: "QUESTION: Store Location"
+    end
 
-  Step 2️⃣: For each item_name, call Embedding Service Gemini Model
-     ↓
-   Return embedding vector for "dragon roll"
-     ↓
-  [Lambda] compares to precomputed DynamoDB embeddings
-     ↳ Finds closest match (e.g., "Green Dragon Roll")
+    rect rgb(255, 240, 245)
+    note right of Lambda: Step 2: Semantic Retrieval
+    Lambda->>Embed: Send "restaurant location"
+    Embed-->>Lambda: Return Vector
+    Lambda->>DB: Query (Cosine Similarity)
+    DB-->>Lambda: Match Found: { "type": "info", "answer": "123 Main St..." }
+    end
 
-  Step 3️⃣: Validate and update Lex slots or session attributes
-     ↓
-  [Lambda + Lex Dialogue Management]
-     ↳ If item has required Options → ask user ("Would you like beef or vegetable?")
-     ↳ Else → confirm item, proceed to checkout
+    Lambda-->>Lex: Return Answer
+    Lex-->>User: "We are located at 123 Main St, Downtown."
+```
+1. Intent Classification (Llama 3.3)
+The raw user text is first processed by Llama 3.3 with a specific system prompt. The model determines if the user is attempting to purchase items or request information.
+2. Vector-Based Knowledge Retrieval
+We maintain a Knowledge Base in DynamoDB containing JSON items for store information (Address, Hours, Wi-Fi Policy, etc.). These items are pre-computed with vector embeddings.
+If the user asks "Where are you guys at?", the system converts this to a vector using Gemini.
+It performs a semantic search against the DynamoDB Knowledge Base.
+Even though the phrasing is different from the stored key ("Store Address"), the vector proximity ensures the correct information is retrieved.
+3. Contextual Ordering
+If the intent is classified as an Order, the pipeline switches to parsing mode:
+Extracts items and quantities to a strict JSON schema.
+Performs semantic matching against the Menu items in DynamoDB (e.g., matching "Spicy Tuna" to "Volcano Roll").
+🛠 Tech Stack
+Cloud & Infrastructure
+Cloud Provider: AWS
+Infrastructure as Code: Terraform
+CI/CD: GitHub Actions
+Compute: AWS Lambda (Python 3.11)
+Database: Amazon DynamoDB (Single Table Design with Vector Attributes)
+Identity: Amazon Cognito (Identity Pools for unauthenticated guest access)
+Artificial Intelligence
+Orchestrator: Custom Python Logic
+Reasoning & Routing: Llama 3.3 (via OpenRouter)
+Embeddings: Google Gemini
+Conversational Interface: Amazon Lex V2
+✨ Core Features
+Hybrid Q&A and Ordering: Seamlessly switches between taking complex food orders and answering general questions about the business within the same conversation.
+Semantic Knowledge Base: Uses vector similarity to answer questions regardless of how the user phrases them (e.g., "When do you close?" vs "What are your hours?").
+Zero-Friction Identity: Users interact immediately via guest credentials; no login or signup barriers.
+Serverless Scalability: 100% serverless architecture means zero idle costs and automatic scaling during peak traffic.
+Automated Deployments: Full CI/CD pipeline ensures that infrastructure and code changes are deployed safely and consistently.
+🚀 Future Roadmap
+🛒 TableTap Integration (E-Commerce)
+The immediate next step is integrating with TableTap, an external e-commerce platform.
+Checkout Workflow: Once the user confirms their order in Lex, Lambda will serialize the session data and trigger a POST request to TableTap's checkout API.
+Payment Handoff: Users will be transitioned from the voice/chat interface to a secure web view to complete payment.
+🤖 Advanced Personalization
+Smart Suggestions: Use session history to suggest drink pairings or upsells based on the current basket.
+User Retention: Recognize returning users via device fingerprints to offer "Quick Reorder" functionality.
 
-| Model                                        | Task                            | Input                 | Output                 | Where it Runs                     |
-| -------------------------------------------- | ------------------------------- | --------------------- | ---------------------- | --------------------------------- |
-| **LLM (e.g. Llama, Gemini, GPT)**            | Instruction following (parsing) | Raw customer text     | JSON (item + qty)      | External API (Bedrock/OpenRouter) |
-| **Embedding model (e.g. MiniLM, BGE-Small)** | Semantic search                 | Parsed item name      | Closest menu item      | Your microservice on EC2/ECS      |
-| **Lex**                                      | Dialogue management             | Structured info       | Prompts / slot filling | AWS-managed                       |
-| **Lambda**                                   | Orchestration                   | Lex event + API calls | Response to Lex        | AWS Lambda                        |
-
-[Lex]
- ↓
-[AWS Lambda]
-   1️⃣ → Call LLM (OpenRouter / Bedrock)
-         → {"order_items":[{"item_name":"dragon roll","quantity":2}]}
-   2️⃣ → For each item_name → Call Embedding Microservice
-         → Match to DynamoDB menu embeddings
-   3️⃣ → If item has required options → Lex prompt
-         Else → add to session order
-   4️⃣ → Return Lex response (ElicitSlot / ConfirmIntent)
-
-
-   1. Become an Informational Menu Expert (using RAG)
-You are already brainstorming this, and it's the most powerful next step. A great assistant doesn't just take orders; it answers questions. This builds trust and helps users make decisions.
-
-What it is: Using the Retrieval-Augmented Generation (RAG) architecture we discussed, you can empower the bot to answer specific questions about your restaurant and menu.
-
-Example Phrases:
-
-"What's in the Green Dragon Roll?"
-
-"Do you have any gluten-free options?"
-
-"How spicy is the Dynamite Roll?"
-
-"What are your hours on Sunday?"
-
-How to Build It:
-
-Create a knowledge base file (menu_details.json or similar) with ingredients, allergen information, spice levels, and restaurant info (hours, address).
-
-In your Lambda's FallbackIntent handler, implement the RAG pipeline: classify the user's intent as a "QUESTION," retrieve relevant info from your knowledge base, and use the Llama model to generate a helpful answer.
-
-2. Handle Order Modifications Gracefully
-People frequently change their minds. A bot that can handle this feels much more human and less rigid.
-
-What it is: Allow users to add, remove, or change items after the initial order has been parsed but before it's confirmed.
-
-Example Phrases:
-
-"Actually, can you remove the fried rice?"
-
-"Change the diet coke to a regular coke."
-
-"I also want to add an order of gyoza."
-
-How to Build It:
-
-Create a new intent in Lex called ModifyOrderIntent.
-
-In your Lambda, when this intent is triggered, it would load the current parsedOrder from the session attributes.
-
-You would use your Llama model to interpret the user's request (is it an add, remove, or update action?).
-
-Your code would then modify the order object in the session and present the new, updated order for confirmation. For example: "Okay, I've removed the fried rice. Your order is now 1 Green Dragon Roll. Is that correct?"
-
-3. Offer Recommendations and Suggestions
-A great server can help you discover new things. Your bot can do the same.
-
-What it is: Provide recommendations based on popularity or pairings.
-
-Example Phrases:
-
-"What's popular?"
-
-"What do you recommend?"
-
-"What goes well with the sashimi?"
-
-How to Build It:
-
-Simple Approach: Hardcode a list of popular items in your Lambda. When asked, the bot can randomly pick one and suggest it.
-
-Advanced (LLM) Approach: Create an AskRecommendationIntent. In your Lambda, send a prompt to Llama that includes the menu and the user's question. For example: "Given this menu, what would be a good suggestion for a customer asking 'what's popular'?"
-
-4. Remember Past Orders for Quick Reordering
-Regular customers love being remembered. This feature provides a massive convenience boost and encourages repeat business.
-
-What it is: For returning users, the bot proactively offers to repeat their last order.
-
-Example Phrases:
-
-(Bot initiates): "Welcome back! Last time you ordered a Green Dragon Roll and a Diet Coke. Would you like to order that again?"
-
-How to Build It:
-
-This requires a way to identify users, even if it's just by sessionId for a short-term memory.
-
-When an order is fulfilled, store the final order details in a DynamoDB table, keyed by the user's identifier.
-
-At the beginning of a new conversation (e.g., in the GreetingIntent or the first OrderFood intent), your Lambda would first check the DynamoDB table for a past order.
-
-If an order is found, the bot can offer the reorder option.
