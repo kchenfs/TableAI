@@ -75,3 +75,36 @@ def test_out_of_range_quantity_fails_closed():
     with pytest.raises(UnknownMenuItem):
         resolve_and_price(
             [{"item_name": "green dragon roll", "quantity": 0, "options": {}}], MENU)
+
+from ordering import new_order_id, build_dinein_order, build_takeout_order
+
+def test_new_order_id_format():
+    oid = new_order_id("TKOT")
+    assert oid.startswith("TKOT-")
+    assert len(oid) == 10          # TKOT- + 5
+    assert oid[5:].isalnum() and oid[5:].isupper()
+
+def test_build_dinein_order_shape():
+    items = [{"name": "Green Dragon Roll", "quantity": 1, "price": 12.0,
+              "subtotal": 12.0, "options": "", "id": 42, "location": "back"}]
+    o = build_dinein_order("DINE-ABCDE", "table-2", items, 1356, "no wasabi")
+    assert o["orderId"] == "DINE-ABCDE"
+    assert o["orderType"] == "dine-in"
+    assert o["orderStatus"] == "PENDING_KITCHEN"
+    assert o["paymentStatus"] == "Dine-In"
+    assert o["tableId"] == "table-2"
+    assert o["items"] == items
+    assert o["notes"] == "no wasabi"
+    assert o["total"] == 13.56
+    assert "orderDate" in o
+
+def test_build_takeout_order_shape():
+    items = [{"name": "Green Dragon Roll", "quantity": 1, "price": 12.0,
+              "subtotal": 12.0, "options": "", "id": 42, "location": "back"}]
+    o = build_takeout_order("TKOT-ABCDE", items, 1356, "")
+    assert o["orderId"] == "TKOT-ABCDE"
+    assert o["orderType"] == "takeout"
+    assert o["orderStatus"] == "PENDING_PAYMENT"
+    assert o["paymentStatus"] == "UNPAID"
+    assert o["total"] == 13.56
+    assert "tableId" not in o

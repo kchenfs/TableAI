@@ -1,5 +1,9 @@
 """Pure order pricing/resolution — no AWS, no Lex, unit-testable."""
 import re
+import random
+import string
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
 
 TAX_RATE = Decimal("0.13")
@@ -79,3 +83,65 @@ def resolve_and_price(parsed_items, menu_lookup):
     total = subtotal * (Decimal("1") + TAX_RATE)
     total_cents = int((total * 100).to_integral_value(rounding=ROUND_HALF_UP))
     return order_items, total_cents
+
+
+def new_order_id(prefix):
+    """Generate an order ID: {prefix}-{5 random uppercase alphanumeric characters}."""
+    suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
+    return f"{prefix}-{suffix}"
+
+
+def _now_iso():
+    """Return current time as ISO string in America/Toronto timezone."""
+    return datetime.now(ZoneInfo("America/Toronto")).isoformat()
+
+
+def build_dinein_order(order_id, table_id, items, total_cents, notes):
+    """Build a dine-in order dict shaped for SNS/DynamoDB.
+
+    Args:
+        order_id: The order ID (e.g., "DINE-ABCDE")
+        table_id: The table ID (e.g., "table-2")
+        items: List of order items (resolved by resolve_and_price)
+        total_cents: Total in cents (including tax)
+        notes: Order notes (optional)
+
+    Returns:
+        dict with orderId, orderType, orderStatus, paymentStatus, tableId, items, notes, total, orderDate
+    """
+    return {
+        "orderId": order_id,
+        "orderType": "dine-in",
+        "orderStatus": "PENDING_KITCHEN",
+        "paymentStatus": "Dine-In",
+        "tableId": table_id,
+        "items": items,
+        "notes": notes or "",
+        "total": total_cents / 100,
+        "orderDate": _now_iso(),
+    }
+
+
+def build_takeout_order(order_id, items, total_cents, notes):
+    """Build a takeout order dict shaped for SNS/DynamoDB.
+
+    Args:
+        order_id: The order ID (e.g., "TKOT-ABCDE")
+        items: List of order items (resolved by resolve_and_price)
+        total_cents: Total in cents (including tax)
+        notes: Order notes (optional)
+
+    Returns:
+        dict with orderId, orderType, orderStatus, paymentStatus, items, notes, total, orderDate
+        (no tableId for takeout orders)
+    """
+    return {
+        "orderId": order_id,
+        "orderType": "takeout",
+        "orderStatus": "PENDING_PAYMENT",
+        "paymentStatus": "UNPAID",
+        "items": items,
+        "notes": notes or "",
+        "total": total_cents / 100,
+        "orderDate": _now_iso(),
+    }
