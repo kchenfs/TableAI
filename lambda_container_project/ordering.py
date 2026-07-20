@@ -44,9 +44,17 @@ def resolve_and_price(parsed_items, menu_lookup):
             raise UnknownMenuItem(name)
 
         raw = entry["raw_item"]
-        quantity = int(line.get("quantity", 1))
+        # UnknownMenuItem means "this line cannot be turned into a valid, priced
+        # order line" — it covers both an unresolvable item and an unusable
+        # quantity (non-numeric, or out of the sane 1..50 range). A malformed
+        # quantity from the LLM parse must fail closed with this documented
+        # exception, not leak a raw ValueError/TypeError to the caller.
+        try:
+            quantity = int(line.get("quantity", 1))
+        except (TypeError, ValueError):
+            raise UnknownMenuItem(name)
         if quantity < 1 or quantity > 50:
-            raise UnknownMenuItem(name)  # treat absurd qty as unusable
+            raise UnknownMenuItem(name)
 
         unit_price = Decimal(str(raw.get("Price", "0")))
         options = line.get("options") or {}

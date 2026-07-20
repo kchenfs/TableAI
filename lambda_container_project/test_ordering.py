@@ -65,3 +65,13 @@ def test_unknown_item_raises():
     with pytest.raises(UnknownMenuItem) as ei:
         resolve_and_price([{"item_name": "flying unicorn roll", "quantity": 1, "options": {}}], MENU)
     assert ei.value.item_name == "flying unicorn roll"
+
+def test_non_numeric_quantity_fails_closed():
+    with pytest.raises(UnknownMenuItem):
+        resolve_and_price(
+            [{"item_name": "green dragon roll", "quantity": "abc", "options": {}}], MENU)
+
+def test_out_of_range_quantity_fails_closed():
+    with pytest.raises(UnknownMenuItem):
+        resolve_and_price(
+            [{"item_name": "green dragon roll", "quantity": 0, "options": {}}], MENU)
