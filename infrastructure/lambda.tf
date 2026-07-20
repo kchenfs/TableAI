@@ -152,7 +152,8 @@ resource "aws_lambda_permission" "lex_invoke" {
   function_name = aws_lambda_function.lex_fulfillment_handler.function_name
   principal     = "lexv2.amazonaws.com"
 
-  # IMPORTANT: You must replace the placeholders below with references to your
-  # Lex Bot and Bot Alias resources defined elsewhere in your Terraform code.
-  source_arn = "arn:aws:lex:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:bot-alias/S832QRVZP3/TSTALIASID"
+  # Scoped to the PUBLISHED bot alias the storefront widget actually uses
+  # (6JNOFO6XPY). This matches the live resource-based permission; using
+  # TSTALIASID here would force-replace it and break Lex -> Lambda invocation.
+  source_arn = "arn:aws:lex:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:bot-alias/S832QRVZP3/6JNOFO6XPY"
 }
