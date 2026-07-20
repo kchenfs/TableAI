@@ -692,8 +692,9 @@ git commit -m "infra: grant Lex Lambda SNS publish + SSM/KMS for Stripe, add env
 
 Create `status_lambda/test_status.py`:
 ```python
-import json, sys, types
-sys.modules.setdefault("boto3", types.ModuleType("boto3"))
+import json, sys
+from unittest.mock import MagicMock
+sys.modules.setdefault("boto3", MagicMock())  # so `boto3.resource(...)` at import works
 import status_app
 
 class _FakeTable:

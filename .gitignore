@@ -277,3 +277,8 @@ terraform.tfvars
 .create_index.py
 
 ratelimiter.py
+# SDD scratch (progress ledger)
+.superpowers/
+
+# Generated Lambda zip artifact (built by terraform archive_file on apply)
+infrastructure/status_lambda.zip
