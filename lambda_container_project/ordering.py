@@ -70,13 +70,17 @@ def resolve_and_price(parsed_items, menu_lookup):
         line_subtotal = unit_price * quantity
         subtotal += line_subtotal
 
+        # ItemNumber comes from DynamoDB as a Decimal, which is not JSON
+        # serializable — the order dict is later json.dumps'd for SNS/put_item.
+        # Coerce to str, matching the website's records (id stored as e.g. "96").
+        item_number = raw.get("ItemNumber")
         order_items.append({
             "name": raw.get("ItemName", name),
             "quantity": quantity,
             "price": float(unit_price),
             "subtotal": float(line_subtotal),
             "options": "; ".join(option_parts),
-            "id": raw.get("ItemNumber"),
+            "id": str(item_number) if item_number is not None else None,
             "location": raw.get("Location", ""),
         })
 

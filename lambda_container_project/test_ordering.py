@@ -8,14 +8,15 @@ MENU = {
         "normalized_name": "green dragon roll",
         "raw_item": {
             "ItemName": "Green Dragon Roll", "Price": "12.00",
-            "ItemNumber": 42, "Location": "back", "Options": [],
+            # ItemNumber is a Decimal in production (boto3 DynamoDB), not a plain int.
+            "ItemNumber": Decimal("42"), "Location": "back", "Options": [],
         },
     },
     "sashimi, sushi & maki combo": {
         "normalized_name": "sashimi, sushi & maki combo",
         "raw_item": {
             "ItemName": "Sashimi, Sushi & Maki Combo", "Price": "30.00",
-            "ItemNumber": 7, "Location": "back",
+            "ItemNumber": Decimal("7"), "Location": "back",
             "Options": [
                 {"name": "Combo Choice", "items": [
                     {"name": "A", "priceModifier": 0},
@@ -35,11 +36,20 @@ def test_simple_item_price_and_shape():
     assert it["quantity"] == 2
     assert it["price"] == 12.00
     assert it["subtotal"] == 24.00
-    assert it["id"] == 42
+    assert it["id"] == "42"          # coerced from Decimal to a JSON-safe string
     assert it["location"] == "back"
     assert it["options"] == ""
     # 24.00 * 1.13 = 27.12 -> 2712 cents
     assert total == 2712
+
+def test_order_items_are_json_serializable_with_decimal_item_numbers():
+    # Regression: DynamoDB returns ItemNumber as Decimal and the order dict is
+    # later json.dumps'd for SNS/put_item — the id must not leak a Decimal.
+    import json
+    items, _ = resolve_and_price(
+        [{"item_name": "green dragon roll", "quantity": 1, "options": {}}], MENU)
+    assert items[0]["id"] == "42"
+    json.dumps(items)  # must not raise "Object of type Decimal is not JSON serializable"
 
 def test_option_price_modifier_applied():
     items, total = resolve_and_price(
