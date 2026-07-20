@@ -38,6 +38,27 @@ client = OpenAI(
     api_key=OPENROUTER_API_KEY,
 )
 
+import traceback as _traceback
+import boto3 as _boto3
+from decimal import Decimal as _Decimal
+from ordering import (resolve_and_price, new_order_id, build_dinein_order,
+                      build_takeout_order, UnknownMenuItem)
+from payments import create_checkout_session
+
+sns_client = _boto3.client("sns")
+_ssm = _boto3.client("ssm")
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
+STRIPE_SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "https://take-out.momotarosushi.ca/order-complete")
+STRIPE_CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "https://take-out.momotarosushi.ca/")
+_STRIPE_KEY = None
+
+def _stripe_key():
+    global _STRIPE_KEY
+    if _STRIPE_KEY is None:
+        _STRIPE_KEY = _ssm.get_parameter(
+            Name="/momotaro/prod/STRIPE_SECRET_KEY", WithDecryption=True)["Parameter"]["Value"]
+    return _STRIPE_KEY
+
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
     GEMINI_EMBEDDING_MODEL = 'models/embedding-001'
@@ -560,28 +581,66 @@ def handle_dialog(event):
     return delegate(event, session_attrs)
     
 def fulfill_order(event, allergy_info=None):
+    session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
+
+    # Idempotency: once an order is placed in this session, don't place another.
+    if session_attrs.get('orderPlaced') == 'true':
+        return close_dialog(event, session_attrs, 'Fulfilled',
+            {'contentType': 'PlainText', 'content': "Your order is already in — anything else?"})
+
     try:
-        session_attrs = event['sessionState'].get('sessionAttributes', {})
-        final_order_str = session_attrs.get('parsedOrder', '{}')
-        final_order = json.loads(final_order_str)
-        
-        summary_parts = []
-        for item in final_order.get('order_items', []):
-            options_str = ""
-            if item.get('options'): 
-                unique_options = set(item['options'].values())
-                options_str = " (" + ", ".join(unique_options) + ")"
-            summary_parts.append(f"{item['quantity']} {item['item_name']}{options_str}")
-        order_summary = ", ".join(summary_parts)
-        
-        summary = f"Thank you! Your order for {order_summary} has been placed."
-        if allergy_info:
-            summary += f" We have noted your allergy information: {allergy_info}."
-            
-        return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': summary})
+        parsed = json.loads(session_attrs.get('parsedOrder', '{}'))
+        parsed_items = parsed.get('order_items', [])
+        if not parsed_items:
+            return close_dialog(event, session_attrs, 'Failed',
+                {'contentType': 'PlainText', 'content': "I didn't catch any items — what would you like?"})
+
+        _, menu_lookup, _ = get_menu()
+        try:
+            order_items, total_cents = resolve_and_price(parsed_items, menu_lookup)
+        except UnknownMenuItem as e:
+            return close_dialog(event, session_attrs, 'Failed',
+                {'contentType': 'PlainText',
+                 'content': f"Sorry, I couldn't find \"{e.item_name}\" on the menu. Could you rephrase it?"})
+
+        notes = session_attrs.get('orderNotes', '')
+        mode = session_attrs.get('orderMode', 'dine-in')
+
+        if mode == 'takeout':
+            order_id = new_order_id('TKOT')
+            order = build_takeout_order(order_id, order_items, total_cents, notes)
+            # DynamoDB rejects floats — convert them to Decimal on the way in.
+            orders_table.put_item(Item=json.loads(json.dumps(order), parse_float=_Decimal))
+            url = create_checkout_session(
+                order_id, order_items, total_cents,
+                STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, _stripe_key())
+            session_attrs['orderPlaced'] = 'true'
+            session_attrs['pendingTakeoutOrderId'] = order_id
+            msg = f"Your total is ${total_cents/100:.2f}. Pay securely here to confirm: {url}"
+            return close_dialog(event, session_attrs, 'Fulfilled',
+                {'contentType': 'PlainText', 'content': msg})
+
+        # dine-in — the order dict holds only str/int/float, so plain json.dumps is safe.
+        table_id = session_attrs.get('tableId')
+        if not table_id:
+            return close_dialog(event, session_attrs, 'Failed',
+                {'contentType': 'PlainText',
+                 'content': "I couldn't tell which table you're at — please reopen the menu from your table's QR code and try again."})
+        order_id = new_order_id('DINE')
+        order = build_dinein_order(order_id, table_id, order_items, total_cents, notes)
+        sns_client.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Message=json.dumps(order),
+            MessageAttributes={'orderType': {'DataType': 'String', 'StringValue': 'dine-in'}})
+        session_attrs['orderPlaced'] = 'true'
+        return close_dialog(event, session_attrs, 'Fulfilled',
+            {'contentType': 'PlainText',
+             'content': f"Order placed — ${total_cents/100:.2f}, sent to the kitchen! (Table {table_id})"})
+
     except Exception as e:
-        print(f"Error fulfilling order: {e}"); traceback.print_exc()
-        return close_dialog(event, event['sessionState'].get('sessionAttributes', {}), 'Failed', {'contentType': 'PlainText', 'content': "I encountered an error while finalizing your order."})
+        print(f"Error fulfilling order: {e}"); _traceback.print_exc()
+        return close_dialog(event, session_attrs, 'Failed',
+            {'contentType': 'PlainText', 'content': "I hit an error finalizing your order. Please try again."})
 
 def _extract_json_from_text(text):
     if not text: return None
