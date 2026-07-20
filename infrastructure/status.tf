@@ -47,6 +47,14 @@ resource "aws_lambda_function_url" "order_status_url" {
   }
 }
 
+resource "aws_lambda_permission" "order_status_url" {
+  statement_id           = "AllowPublicFunctionUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.order_status.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
 output "order_status_url" {
   value = aws_lambda_function_url.order_status_url.function_url
 }
