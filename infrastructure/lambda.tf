@@ -59,6 +59,27 @@ resource "aws_iam_policy" "lex_fulfillment_policy" {
 
         ]
       },
+      {
+        Sid      = "PublishOrderEvents"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
+        Resource = var.order_events_topic_arn
+      },
+      {
+        Sid      = "ReadStripeSecret"
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.stripe_secret_param}"
+      },
+      {
+        Sid      = "DecryptStripeSecretViaSsm"
+        Effect   = "Allow"
+        Action   = "kms:Decrypt"
+        Resource = "*"
+        Condition = {
+          StringEquals = { "kms:ViaService" = "ssm.${data.aws_region.current.name}.amazonaws.com" }
+        }
+      },
       # Permission to get the ECR authorization token
       {
         Effect   = "Allow"
@@ -113,6 +134,9 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
       OPENROUTER_API_KEY = var.openrouter_api_key
       GOOGLE_API_KEY      = var.google_api_key
       S3_BUCKET_NAME      = data.aws_s3_bucket.momotaro-assets.bucket
+      SNS_TOPIC_ARN      = var.order_events_topic_arn
+      STRIPE_SUCCESS_URL = "https://take-out.momotarosushi.ca/order-complete"
+      STRIPE_CANCEL_URL  = "https://take-out.momotarosushi.ca/"
     }
   }
 
