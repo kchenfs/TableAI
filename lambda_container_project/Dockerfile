@@ -10,8 +10,12 @@ COPY requirements.txt .
 # Install the dependencies from requirements.txt.
 RUN pip install -r requirements.txt
 
-# Copy your application code (app.py) into the working directory.
+# Copy your application code into the working directory.
+# app.py imports the pure ordering/payments modules at load time, so they must
+# be in the image or the Lambda crashes on cold start with ModuleNotFoundError.
 COPY app.py .
+COPY ordering.py .
+COPY payments.py .
 
 # --- ADD THIS PART ---
 # Copy the RAG data files into the image's working directory.
