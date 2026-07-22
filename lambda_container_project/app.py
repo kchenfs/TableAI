@@ -22,7 +22,9 @@ import faiss
 MENU_TABLE_NAME = os.environ['MENU_TABLE_NAME']
 ORDERS_TABLE_NAME = os.environ['ORDERS_TABLE_NAME']
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/llama-3.3-70b-instruct:free")
+# OpenRouter retired the ':free' tier for this model (returns 404). Use the
+# standard (paid) slug; override via the MODEL_NAME env var if needed.
+MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/llama-3.3-70b-instruct")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
 
