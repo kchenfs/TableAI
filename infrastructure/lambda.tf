@@ -131,6 +131,10 @@ resource "aws_lambda_function" "lex_fulfillment_handler" {
     variables = {
       MENU_TABLE_NAME   = data.aws_dynamodb_table.menu.name
       ORDERS_TABLE_NAME = data.aws_dynamodb_table.orders.name
+      # OpenRouter model for parsing/classification. Kept as an env var so the
+      # model can be swapped without rebuilding the image. Free tiers get
+      # retired without notice — if the bot stops parsing, check for a 404/402.
+      MODEL_NAME         = var.openrouter_model
       OPENROUTER_API_KEY = var.openrouter_api_key
       GOOGLE_API_KEY      = var.google_api_key
       S3_BUCKET_NAME      = data.aws_s3_bucket.momotaro-assets.bucket

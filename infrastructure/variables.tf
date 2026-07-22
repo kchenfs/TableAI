@@ -22,3 +22,9 @@ variable "stripe_secret_param" {
   type        = string
   default     = "/momotaro/prod/STRIPE_SECRET_KEY"
 }
+
+variable "openrouter_model" {
+  description = "OpenRouter model slug for the fulfillment Lambda's LLM calls"
+  type        = string
+  default     = "openai/gpt-oss-20b:free"
+}
