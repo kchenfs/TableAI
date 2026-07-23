@@ -623,9 +623,15 @@ def fulfill_order(event, allergy_info=None):
                 STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, _stripe_key())
             session_attrs['orderPlaced'] = 'true'
             session_attrs['pendingTakeoutOrderId'] = order_id
-            msg = f"Your total is ${total_cents/100:.2f}. Pay securely here to confirm: {url}"
+            # Send as CustomPayload (markdown) so lex-web-ui renders a proper
+            # clickable link via marked. A bare Stripe URL in a PlainText message
+            # gets run through the widget's url-to-link regex, which truncates the
+            # required '#...' fragment -> the clicked link 404s / shows a blank page.
+            # A markdown link preserves the FULL href.
+            msg = (f"Your total is **${total_cents/100:.2f}**. "
+                   f"[Tap here to pay securely and confirm your order]({url})")
             return close_dialog(event, session_attrs, 'Fulfilled',
-                {'contentType': 'PlainText', 'content': msg})
+                {'contentType': 'CustomPayload', 'content': msg})
 
         # dine-in — the order dict holds only str/int/float, so plain json.dumps is safe.
         table_id = session_attrs.get('tableId')
