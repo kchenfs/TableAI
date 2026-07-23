@@ -526,6 +526,11 @@ def handle_dialog(event):
             
             slots['DrinkQuery'] = None # Clear the slot
             session_attrs['parsedOrder'] = json.dumps({'order_items': order_items}, cls=DecimalEncoder)
+            # The customer answered the drink prompt (added a drink OR declined,
+            # e.g. "no"/"nope"). Mark it done so we don't offer drinks again —
+            # otherwise a decline parses to no drink and re-triggers the prompt
+            # forever.
+            session_attrs['drinkPromptDone'] = 'true'
         except Exception as e:
             print(f"Error during DRINK parsing: {e}"); traceback.print_exc()
             return elicit_slot(event, session_attrs, 'DrinkQuery', "I had a little trouble understanding your drink order. Could you say it again?")
@@ -561,7 +566,7 @@ def handle_dialog(event):
         # C. If all items are valid, check if we should prompt for a drink.
         has_food = any(i.get('category') and 'drink' not in str(i.get('category','')).lower() for i in normalized_items)
         has_drink = any(i.get('category') and 'drink' in str(i.get('category','')).lower() for i in normalized_items)
-        if has_food and not has_drink:
+        if has_food and not has_drink and not session_attrs.get('drinkPromptDone'):
             return elicit_slot(event, session_attrs, 'DrinkQuery', "I've got your food order. Would you like anything to drink?")
 
         # D. If the order is fully valid and complete, generate the confirmation prompt.
