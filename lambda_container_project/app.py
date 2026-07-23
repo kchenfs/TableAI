@@ -206,9 +206,10 @@ def get_rag_answer(event):
     print(f"QA: Getting answer for question: '{transcript}'")
     try:
         if _kb_text is None:
-            with open('rag_chunks.json', 'r') as f:
-                chunks = json.load(f)
-            _kb_text = "\n".join(chunks) if isinstance(chunks, list) else str(chunks)
+            # The full knowledge base (restaurant info + every item's ingredients,
+            # allergens, spice level, price) — small enough to pass entirely.
+            with open('knowledge_base.json', 'r') as f:
+                _kb_text = f.read()
         system = (
             "You are the friendly assistant for Momotaro Sushi, a Japanese restaurant in Toronto. "
             "Answer the customer's question using ONLY the restaurant information provided below "

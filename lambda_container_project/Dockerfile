@@ -17,11 +17,8 @@ COPY app.py .
 COPY ordering.py .
 COPY payments.py .
 
-# --- ADD THIS PART ---
-# Copy the RAG data files into the image's working directory.
-COPY rag_index.faiss .
-COPY rag_chunks.json .
-# ---------------------
+# Knowledge base for the menu/restaurant Q&A (loaded in full, no embeddings).
+COPY knowledge_base.json .
 
 # Set the CMD to your handler.
 # Format: CMD [ "<filename>.<handler_function_name>" ]
