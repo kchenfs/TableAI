@@ -623,6 +623,12 @@ def fulfill_order(event, allergy_info=None):
                 STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, _stripe_key())
             session_attrs['orderPlaced'] = 'true'
             session_attrs['pendingTakeoutOrderId'] = order_id
+            # Expose the checkout URL + total as session attributes so the
+            # storefront page can render an in-app "Pay $X" button — it listens
+            # for lex-web-ui's 'updatelexstate' DOM event and reads
+            # state.sessionAttributes. The in-chat link below stays as a fallback.
+            session_attrs['pendingCheckoutUrl'] = url
+            session_attrs['pendingCheckoutTotal'] = f"{total_cents/100:.2f}"
             # Send as CustomPayload (markdown) so lex-web-ui renders a proper
             # clickable link via marked. A bare Stripe URL in a PlainText message
             # gets run through the widget's url-to-link regex, which truncates the
