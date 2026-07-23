@@ -17,332 +17,1095 @@
         "ratingValue": 4.6,
         "reviewCount": "1000+"
       }
-    }
+    },
+    "dietaryNote": "Ingredient and allergen details are listed where available. Customers with allergies or dietary restrictions should always confirm with our staff before ordering."
   },
   "menuItems": [
     {
-      "name": "Miso Soup",
+      "name": "Albacore Sashimi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Albacore Sushi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Crab Meat Sashimi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Crab Meat Sushi",
+      "category": "A La Carte",
+      "price": 3.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Egg Sashimi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Egg Sushi",
+      "category": "A La Carte",
+      "price": 3.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Octopus (Ika) Sashimi",
+      "category": "A La Carte",
+      "price": 7.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Octopus (Ika) Sushi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Salmon Sashimi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Salmon Sushi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Scallop Sashimi",
+      "category": "A La Carte",
+      "price": 7.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Scallop Sushi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Shrimp Sashimi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Shrimp Sushi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Snapper Sashimi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Snapper Sushi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Surf Clam Sashimi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Surf Clam Sushi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Tobiko Sashimi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Tobiko Sushi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Tofu (Inari) Sushi",
+      "category": "A La Carte",
+      "price": 3.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Tofu (Inarii) Sashimi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Tuna Sashimi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Tuna Sushi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Unagi Sashimi",
+      "category": "A La Carte",
+      "price": 7.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Unagi Sushi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "White Tuna Sashimi",
+      "category": "A La Carte",
+      "price": 5.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "White Tuna Sushi",
+      "category": "A La Carte",
+      "price": 4.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Yellow Tail Sashimi",
+      "category": "A La Carte",
+      "price": 7.99,
+      "description": "2 pcs"
+    },
+    {
+      "name": "Yellow Tail Sushi",
+      "category": "A La Carte",
+      "price": 6.99,
+      "description": "3 pcs"
+    },
+    {
+      "name": "Asahi Super Dry",
+      "category": "Alcohol",
+      "price": 8.99,
+      "description": "500mL Can (5% ABV)"
+    },
+    {
+      "name": "Budweiser",
+      "category": "Alcohol",
+      "price": 4.99,
+      "description": "341mL Bottle (5% ABV)"
+    },
+    {
+      "name": "Chum Churum Rich",
+      "category": "Alcohol",
+      "price": 21.0,
+      "description": "360mL Bottle (20.3% ABV)"
+    },
+    {
+      "name": "Corona Extra",
+      "category": "Alcohol",
+      "price": 5.99,
+      "description": "330mL Bottle (4.6% ABV)"
+    },
+    {
+      "name": "Draft Sake",
+      "category": "Alcohol",
+      "price": 15.99,
+      "description": "300mL bottle (14% ABV)"
+    },
+    {
+      "name": "Heineken",
+      "category": "Alcohol",
+      "price": 5.99,
+      "description": "330mL Bottle (5% ABV)"
+    },
+    {
+      "name": "House Red",
+      "category": "Alcohol",
+      "price": 8.95,
+      "description": "A smooth and balanced house red wine."
+    },
+    {
+      "name": "House White",
+      "category": "Alcohol",
+      "price": 8.95,
+      "description": "A crisp and refreshing house white wine."
+    },
+    {
+      "name": "Jacob's Creek Cabernet Sauvignon",
+      "category": "Alcohol",
+      "price": 35.0,
+      "description": "750mL Bottle (13.5% ABV)"
+    },
+    {
+      "name": "Japanese Plum Wine",
+      "category": "Alcohol",
+      "price": 8.95,
+      "description": "A rich, sweet fermented plum wine with a smooth finish and hints of apple and pear."
+    },
+    {
+      "name": "Lindemans Bin 65 Chardonnay",
+      "category": "Alcohol",
+      "price": 35.0,
+      "description": "750mL Bottle (13% ABV)"
+    },
+    {
+      "name": "Masi Modello Merlot Trevenezie IGT",
+      "category": "Alcohol",
+      "price": 35.0,
+      "description": "750mL Bottle (12% ABV)"
+    },
+    {
+      "name": "Molson Canadian",
+      "category": "Alcohol",
+      "price": 4.99,
+      "description": "341mL Bottle (5% ABV)"
+    },
+    {
+      "name": "Sapporo",
+      "category": "Alcohol",
+      "price": 8.99,
+      "description": "500mL Can (5% ABV)"
+    },
+    {
+      "name": "Yellow Tail Shiraz",
+      "category": "Alcohol",
+      "price": 35.0,
+      "description": "750mL Bottle"
+    },
+    {
+      "name": "Aburi Salmon Sushi",
       "category": "Appetizer",
-      "price": 2.50,
-      "description": "Soybean soup with tofu and seaweed.",
-      "ingredients": ["miso paste", "tofu", "seaweed", "dashi"],
-      "allergens": ["soy"],
-      "spice_level": "none"
+      "price": 11.99,
+      "description": "6 pc torched salmon topped with spicy mayo, eel sauce and fish roe"
+    },
+    {
+      "name": "Aburi Sushi",
+      "category": "Appetizer",
+      "price": 10.99,
+      "description": "6 pc assorted torched sushi topped with spicy mayo, eel sauce and fish roe"
+    },
+    {
+      "name": "Beef Short Ribs",
+      "category": "Appetizer",
+      "price": 14.99,
+      "description": "Sweet ribs topped with eel sauce"
+    },
+    {
+      "name": "Calamari",
+      "category": "Appetizer",
+      "price": 8.99
+    },
+    {
+      "name": "Cheese Wonton",
+      "category": "Appetizer",
+      "price": 8.99,
+      "description": "Crispy wontons filled with cheese"
+    },
+    {
+      "name": "Chicken Karaage",
+      "category": "Appetizer",
+      "price": 10.99
+    },
+    {
+      "name": "Chicken Yakitori",
+      "category": "Appetizer",
+      "price": 9.99,
+      "description": "Grilled chicken skewer"
+    },
+    {
+      "name": "Deep Fried Tofu",
+      "category": "Appetizer",
+      "price": 5.99,
+      "description": "6 pcs"
     },
     {
       "name": "Edamame",
       "category": "Appetizer",
-      "price": 6.50,
-      "description": "Steamed green soybeans.",
-      "ingredients": ["soybeans", "salt"],
-      "allergens": ["soy"],
+      "price": 5.99,
+      "description": "Lightly poached soybeans with salt",
+      "ingredients": [
+        "soybeans",
+        "salt"
+      ],
+      "allergens": [
+        "soy"
+      ],
       "spice_level": "none"
     },
     {
       "name": "Gyoza",
       "category": "Appetizer",
-      "price": 6.50,
-      "description": "Pan-fried pork dumplings (6 pcs).",
-      "ingredients": ["pork", "flour", "cabbage", "onion", "garlic", "soy sauce"],
-      "allergens": ["gluten", "soy"],
+      "price": 5.99,
+      "description": "6 pcs, choice of beef or vegetable",
+      "ingredients": [
+        "pork",
+        "flour",
+        "cabbage",
+        "onion",
+        "garlic",
+        "soy sauce"
+      ],
+      "allergens": [
+        "gluten",
+        "soy"
+      ],
       "spice_level": "none"
     },
     {
-      "name": "Harumaki (Spring Roll)",
+      "name": "Honey Garlic Karage",
       "category": "Appetizer",
-      "price": 5.95,
-      "description": "Deep-fried vegetable spring rolls (4 pcs).",
-      "ingredients": ["cabbage", "carrot", "celery", "flour wrapper"],
-      "allergens": ["gluten"],
-      "spice_level": "none"
+      "price": 11.99
+    },
+    {
+      "name": "Salmon Sashimi Appetizer",
+      "category": "Appetizer",
+      "price": 12.99,
+      "description": "9 pcs"
+    },
+    {
+      "name": "Salmon Sushi Appetizer",
+      "category": "Appetizer",
+      "price": 8.99,
+      "description": "6 pc"
+    },
+    {
+      "name": "Sashimi Appetizer",
+      "category": "Appetizer",
+      "price": 12.99,
+      "description": "6 pc assorted sashimi"
+    },
+    {
+      "name": "Shrimp Dumplings",
+      "category": "Appetizer",
+      "price": 6.99
     },
     {
       "name": "Shrimp Tempura",
       "category": "Appetizer",
-      "price": 10.95,
-      "description": "Lightly battered and deep-fried shrimp (5 pcs).",
-      "ingredients": ["shrimp", "flour", "egg"],
-      "allergens": ["shellfish", "gluten", "egg"],
+      "price": 9.99,
+      "description": "5 pcs",
+      "ingredients": [
+        "shrimp",
+        "flour",
+        "egg"
+      ],
+      "allergens": [
+        "shellfish",
+        "gluten",
+        "egg"
+      ],
       "spice_level": "none"
+    },
+    {
+      "name": "Siu Mai",
+      "category": "Appetizer",
+      "price": 6.99,
+      "description": "Steamed pork shrimp dumpling"
+    },
+    {
+      "name": "Soft Shell Crab",
+      "category": "Appetizer",
+      "price": 11.99
+    },
+    {
+      "name": "Spring Roll",
+      "category": "Appetizer",
+      "price": 6.99,
+      "description": "5 pc, vegetarian"
+    },
+    {
+      "name": "Sushi Appetizer",
+      "category": "Appetizer",
+      "price": 7.99,
+      "description": "6 pc assorted sushi"
+    },
+    {
+      "name": "Sushi Pizza",
+      "category": "Appetizer",
+      "price": 10.99,
+      "description": "Choice of topping for Sushi Pizza."
+    },
+    {
+      "name": "Sweet Potato Tempura",
+      "category": "Appetizer",
+      "price": 7.99,
+      "description": "8 pcs"
+    },
+    {
+      "name": "Takoyaki",
+      "category": "Appetizer",
+      "price": 6.99
+    },
+    {
+      "name": "Tuna Tataki",
+      "category": "Appetizer",
+      "price": 12.99
     },
     {
       "name": "Vegetable Tempura",
       "category": "Appetizer",
+      "price": 7.99,
+      "description": "8 pcs",
+      "ingredients": [
+        "assorted vegetables",
+        "flour",
+        "egg"
+      ],
+      "allergens": [
+        "gluten",
+        "egg"
+      ],
+      "spice_level": "none"
+    },
+    {
+      "name": "Bento Box",
+      "category": "Bento Box",
+      "price": 14.99,
+      "description": "Choose from our popular Bento Boxes: Beef Short Rib, Chicken Teriyaki, Salmon Teriyaki, Tempura, or Tofu Tempura. Served with rice, salad, miso soup, and an optional side"
+    },
+    {
+      "name": "Daily Special A",
+      "category": "Daily Special",
+      "price": 14.95,
+      "description": "Dynamite Roll (10pcs) + Salmon Sushi (3pcs)"
+    },
+    {
+      "name": "Daily Special B",
+      "category": "Daily Special",
+      "price": 14.95,
+      "description": "Spicy Tuna (6 pcs) and Spicy Salmon (6 pcs)"
+    },
+    {
+      "name": "Daily Special C",
+      "category": "Daily Special",
+      "price": 14.95,
+      "description": "Yam & Avocado Roll (6 pcs) and Veggie Gyoza (6 pcs)"
+    },
+    {
+      "name": "Honey Fried Bananas With Ice Cream",
+      "category": "Dessert",
       "price": 8.95,
-      "description": "Assorted lightly battered and deep-fried vegetables.",
-      "ingredients": ["assorted vegetables", "flour", "egg"],
-      "allergens": ["gluten", "egg"],
-      "spice_level": "none"
+      "description": "Honey fried bananas served with a scoop of ice cream"
     },
     {
-      "name": "Agedashi Tofu",
-      "category": "Appetizer",
-      "price": 6.95,
-      "description": "Deep-fried tofu served in a hot tentsuyu broth.",
-      "ingredients": ["tofu", "dashi", "soy sauce", "mirin", "bonito flakes"],
-      "allergens": ["soy", "gluten", "fish"],
-      "spice_level": "none"
+      "name": "Ice Cream",
+      "category": "Dessert",
+      "price": 4.99,
+      "description": "Choice of ice cream flavor."
     },
     {
-      "name": "Green Salad",
-      "category": "Salad",
-      "price": 5.95,
-      "description": "Fresh greens with ginger dressing.",
-      "ingredients": ["lettuce", "cucumber", "carrot", "ginger dressing"],
-      "allergens": [],
-      "spice_level": "none"
+      "name": "Donburi (Rice Bowl)",
+      "category": "Don",
+      "price": 16.99,
+      "description": "Your choice of protein served over a bed of rice."
     },
     {
-      "name": "Avocado Salad",
-      "category": "Salad",
-      "price": 6.95,
-      "description": "Green salad topped with fresh avocado.",
-      "ingredients": ["lettuce", "avocado", "cucumber", "ginger dressing"],
-      "allergens": [],
-      "spice_level": "none"
+      "name": "Apple Juice",
+      "category": "Drinks",
+      "price": 2.99
     },
     {
-      "name": "Seaweed Salad",
-      "category": "Salad",
-      "price": 6.50,
-      "description": "Seasoned seaweed salad.",
-      "ingredients": ["seaweed", "sesame oil", "vinegar"],
-      "allergens": ["sesame"],
-      "spice_level": "none"
+      "name": "Bubble Tea",
+      "category": "Drinks",
+      "price": 6.99
     },
     {
-      "name": "Avocado & Cucumber Roll",
-      "category": "Maki and Hand Roll",
-      "price": 5.95,
-      "description": "Avocado and cucumber rolled in sushi rice and nori.",
-      "ingredients": ["avocado", "cucumber", "sushi rice", "nori"],
-      "allergens": [],
-      "spice_level": "none"
+      "name": "Coke",
+      "category": "Drinks",
+      "price": 1.99
+    },
+    {
+      "name": "Diet Coke",
+      "category": "Drinks",
+      "price": 1.99
+    },
+    {
+      "name": "Green Tea",
+      "category": "Drinks",
+      "price": 2.0,
+      "description": "Refreshing hot green tea"
+    },
+    {
+      "name": "Nestea",
+      "category": "Drinks",
+      "price": 1.99
+    },
+    {
+      "name": "Orange Juice",
+      "category": "Drinks",
+      "price": 2.99
+    },
+    {
+      "name": "Perrier",
+      "category": "Drinks",
+      "price": 3.5
+    },
+    {
+      "name": "Sprite",
+      "category": "Drinks",
+      "price": 1.99
+    },
+    {
+      "name": "Lover Boat For Three",
+      "category": "Lover Boat",
+      "price": 85.95,
+      "description": "50 pc sushi, sashimi, maki ( 10 pc green dragon pc, 10 pc golden dragon 6pc spicy salmon, 12 pc assorted sushi, 12 pc sashimi), served with miso soup, salad, edamame, chicken karage, mixed tempura, spring rolls"
+    },
+    {
+      "name": "Lover Boat For Two",
+      "category": "Lover Boat",
+      "price": 55.95,
+      "description": "32 pc sushi, sashimi, maki ( 10 pc green dragon pc, 6pc spicy salmon, 8 pc assorted sushi, 6 pc sashimi), served with miso soup, salad, edamame, mixed tempura, spring rolls"
+    },
+    {
+      "name": "Asparagus Roll",
+      "category": "Maki",
+      "price": 5.99
+    },
+    {
+      "name": "Avocado Cucumber Roll",
+      "category": "Maki",
+      "price": 4.99
+    },
+    {
+      "name": "Avocado Roll",
+      "category": "Maki",
+      "price": 4.99
     },
     {
       "name": "California Roll",
-      "category": "Maki and Hand Roll",
-      "price": 4.95,
-      "description": "Crab meat, avocado, and cucumber.",
-      "ingredients": ["crab meat", "avocado", "cucumber", "sushi rice", "nori"],
-      "allergens": ["shellfish", "gluten", "soy"],
-      "spice_level": "none"
+      "category": "Maki",
+      "price": 5.99,
+      "ingredients": [
+        "crab meat",
+        "avocado",
+        "cucumber",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "shellfish",
+        "gluten",
+        "soy"
+      ],
+      "spice_level": "none",
+      "description": "Crab meat, avocado, and cucumber."
+    },
+    {
+      "name": "Cucumber Roll",
+      "category": "Maki",
+      "price": 3.99
+    },
+    {
+      "name": "Cucumber Salad Roll",
+      "category": "Maki",
+      "price": 10.99,
+      "description": "Cucumber wrapped crab meat, salmon, avocado, topped with fish roe and kewpie"
+    },
+    {
+      "name": "Kani Roll",
+      "category": "Maki",
+      "price": 4.99
+    },
+    {
+      "name": "Philadelphia Roll",
+      "category": "Maki",
+      "price": 7.99,
+      "description": "Salmon, cream cheese, avocado"
+    },
+    {
+      "name": "Salmon Avocado Roll",
+      "category": "Maki",
+      "price": 6.99
+    },
+    {
+      "name": "Salmon Roll",
+      "category": "Maki",
+      "price": 5.99
+    },
+    {
+      "name": "Spicy Butterfish Roll",
+      "category": "Maki",
+      "price": 6.99
+    },
+    {
+      "name": "Spicy California Roll",
+      "category": "Maki",
+      "price": 6.5
+    },
+    {
+      "name": "Spicy Crab Meat Roll",
+      "category": "Maki",
+      "price": 6.99
     },
     {
       "name": "Spicy Salmon Roll",
-      "category": "Maki and Hand Roll",
+      "category": "Maki",
       "price": 6.99,
-      "description": "Fresh salmon with spicy mayo.",
-      "ingredients": ["salmon", "spicy mayonnaise", "sushi rice", "nori"],
-      "allergens": ["fish", "egg", "soy"],
-      "spice_level": "medium"
+      "ingredients": [
+        "salmon",
+        "spicy mayonnaise",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "fish",
+        "egg",
+        "soy"
+      ],
+      "spice_level": "medium",
+      "description": "Fresh salmon with spicy mayo."
+    },
+    {
+      "name": "Spicy Scallop Roll",
+      "category": "Maki",
+      "price": 6.99
     },
     {
       "name": "Spicy Tuna Roll",
-      "category": "Maki and Hand Roll",
-      "price": 7.50,
-      "description": "Fresh tuna with spicy mayo.",
-      "ingredients": ["tuna", "spicy mayonnaise", "sushi rice", "nori"],
-      "allergens": ["fish", "egg", "soy"],
-      "spice_level": "medium"
+      "category": "Maki",
+      "price": 7.99,
+      "ingredients": [
+        "tuna",
+        "spicy mayonnaise",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "fish",
+        "egg",
+        "soy"
+      ],
+      "spice_level": "medium",
+      "description": "Fresh tuna with spicy mayo."
     },
     {
-      "name": "Unagi Roll (Eel)",
-      "category": "Maki and Hand Roll",
-      "price": 7.95,
-      "description": "BBQ eel with cucumber.",
-      "ingredients": ["bbq eel", "cucumber", "sushi rice", "nori"],
-      "allergens": ["fish", "gluten", "soy"],
-      "spice_level": "none"
+      "name": "Tuna Roll",
+      "category": "Maki",
+      "price": 6.99
+    },
+    {
+      "name": "Unagi Cucumber Roll",
+      "category": "Maki",
+      "price": 7.99
+    },
+    {
+      "name": "Yam Avocado Roll",
+      "category": "Maki",
+      "price": 5.99
+    },
+    {
+      "name": "Yam Tempura Roll",
+      "category": "Maki",
+      "price": 4.99
+    },
+    {
+      "name": "Maki Tray",
+      "category": "Maki Tray",
+      "price": 35.99,
+      "description": "Chef-selected assortment of maki rolls, available in small, medium, or large trays"
+    },
+    {
+      "name": "Noodle Soup",
+      "category": "Noodle Soup",
+      "price": 11.99,
+      "description": "Udon or soba noodles in a kombu dashi broth with vegetables and choice of main"
+    },
+    {
+      "name": "Brown Rice",
+      "category": "Rice/Fried Rice",
+      "price": 3.99
+    },
+    {
+      "name": "Fried Rice",
+      "category": "Rice/Fried Rice",
+      "price": 12.99,
+      "description": "Fried rice served with your choice of vegetable, chicken, beef, or shrimp"
+    },
+    {
+      "name": "Rice",
+      "category": "Rice/Fried Rice",
+      "price": 2.99
+    },
+    {
+      "name": "Sushi Rice",
+      "category": "Rice/Fried Rice",
+      "price": 3.99
+    },
+    {
+      "name": "Roll Set",
+      "category": "Roll Set Combo",
+      "price": 14.99,
+      "description": "Chef-selected assortment of rolls, served with miso soup and salad"
+    },
+    {
+      "name": "Avocado Salad",
+      "category": "Soup & Salad",
+      "price": 6.99,
+      "ingredients": [
+        "lettuce",
+        "avocado",
+        "cucumber",
+        "ginger dressing"
+      ],
+      "spice_level": "none",
+      "description": "Green salad topped with fresh avocado."
+    },
+    {
+      "name": "Green Salad",
+      "category": "Soup & Salad",
+      "price": 3.99,
+      "ingredients": [
+        "lettuce",
+        "cucumber",
+        "carrot",
+        "ginger dressing"
+      ],
+      "spice_level": "none",
+      "description": "Fresh greens with ginger dressing."
+    },
+    {
+      "name": "Kani Salad",
+      "category": "Soup & Salad",
+      "price": 7.99
+    },
+    {
+      "name": "Mango Salad",
+      "category": "Soup & Salad",
+      "price": 6.99
+    },
+    {
+      "name": "Miso Soup",
+      "category": "Soup & Salad",
+      "price": 2.5,
+      "ingredients": [
+        "miso paste",
+        "tofu",
+        "seaweed",
+        "dashi"
+      ],
+      "allergens": [
+        "soy"
+      ],
+      "spice_level": "none",
+      "description": "Soybean soup with tofu and seaweed."
+    },
+    {
+      "name": "Seaweed Salad",
+      "category": "Soup & Salad",
+      "price": 5.99,
+      "ingredients": [
+        "seaweed",
+        "sesame oil",
+        "vinegar"
+      ],
+      "allergens": [
+        "sesame"
+      ],
+      "spice_level": "none",
+      "description": "Seasoned seaweed salad."
+    },
+    {
+      "name": "Spicy Miso Soup",
+      "category": "Soup & Salad",
+      "price": 2.99
+    },
+    {
+      "name": "Wonton Soup",
+      "category": "Soup & Salad",
+      "price": 8.99
+    },
+    {
+      "name": "Aburi Salmon Dragon",
+      "category": "Special Roll",
+      "price": 15.99,
+      "description": "Dynamite, topped with torched salmon, eel sauce, and fish roe"
+    },
+    {
+      "name": "Caterpillar Roll",
+      "category": "Special Roll",
+      "price": 13.99,
+      "description": "Bbq eel, cucumber, topped with slice avocado"
+    },
+    {
+      "name": "Crispy Dragon Roll",
+      "category": "Special Roll",
+      "price": 11.99,
+      "description": "California, topped with spicy mayo and tempura bits"
     },
     {
       "name": "Dynamite Roll",
       "category": "Special Roll",
-      "price": 7.95,
-      "description": "Shrimp tempura, avocado, crab meat, cucumber, and fish egg with eel sauce.",
-      "ingredients": ["shrimp tempura", "avocado", "crab meat", "cucumber", "fish egg", "eel sauce", "sushi rice", "nori"],
-      "allergens": ["shellfish", "gluten", "soy", "egg"],
+      "price": 10.99,
+      "description": "Shrimp tempura, avocado, crab meat, cucumber, topped with eel sauce",
+      "ingredients": [
+        "shrimp tempura",
+        "avocado",
+        "crab meat",
+        "cucumber",
+        "fish egg",
+        "eel sauce",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "shellfish",
+        "gluten",
+        "soy",
+        "egg"
+      ],
+      "spice_level": "none"
+    },
+    {
+      "name": "Fire Dragon Roll",
+      "category": "Special Roll",
+      "price": 16.99,
+      "description": "Spicy salmon mixed with tempura bits, avocado, cucumber, topped with bbq eel and eel sauce."
+    },
+    {
+      "name": "Futo Maki",
+      "category": "Special Roll",
+      "price": 10.99,
+      "description": "Avocado, crab meat, cucumber, oshinko (japanese pickle), tamago"
+    },
+    {
+      "name": "Golden Dragon Roll",
+      "category": "Special Roll",
+      "price": 13.99,
+      "description": "Dynamite, topped with salmon and eel sauce",
+      "ingredients": [
+        "shrimp tempura",
+        "avocado",
+        "crab meat",
+        "cucumber",
+        "fish egg",
+        "salmon",
+        "eel sauce",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "shellfish",
+        "gluten",
+        "soy",
+        "egg",
+        "fish"
+      ],
       "spice_level": "none"
     },
     {
       "name": "Green Dragon Roll",
       "category": "Special Roll",
       "price": 13.99,
-      "description": "Dynamite roll topped with avocado and eel sauce.",
-      "ingredients": ["shrimp tempura", "avocado", "crab meat", "cucumber", "fish egg", "eel sauce", "sushi rice", "nori"],
-      "allergens": ["shellfish", "gluten", "soy", "egg"],
+      "description": "avocado, crabmeat, cucumber,  tempura shrimp topped with sliced avocado and eel sauce, 8 pieces.",
+      "ingredients": [
+        "shrimp tempura",
+        "avocado",
+        "crab meat",
+        "cucumber",
+        "fish egg",
+        "eel sauce",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "shellfish",
+        "gluten",
+        "soy",
+        "egg"
+      ],
       "spice_level": "none"
     },
     {
-      "name": "Golden Dragon Roll",
+      "name": "Hot Fusion Roll",
       "category": "Special Roll",
       "price": 13.99,
-      "description": "Dynamite roll topped with salmon and eel sauce.",
-      "ingredients": ["shrimp tempura", "avocado", "crab meat", "cucumber", "fish egg", "salmon", "eel sauce", "sushi rice", "nori"],
-      "allergens": ["shellfish", "gluten", "soy", "egg", "fish"],
-      "spice_level": "none"
+      "description": "California topped with torched salmon, spicy mayo, eel sauce, and fish roe"
     },
     {
-      "name": "Red Dragon Roll",
+      "name": "Lobster Roll",
       "category": "Special Roll",
-      "price": 14.99,
-      "description": "A vibrant roll with shrimp tempura and cucumber, topped with fresh tuna.",
-      "ingredients": ["shrimp tempura", "cucumber", "tuna", "sushi rice", "nori"],
-      "allergens": ["shellfish", "gluten", "soy", "fish"],
-      "spice_level": "none"
+      "price": 15.99,
+      "description": "Fried lobster tail, avocado, crab meat, cucumber, topped with eel sauce and fish roe"
+    },
+    {
+      "name": "Rainbow Dragon Roll",
+      "category": "Special Roll",
+      "price": 12.99,
+      "description": "Dynamite topped with assorted fish and eel sauce"
+    },
+    {
+      "name": "Snow Roll",
+      "category": "Special Roll",
+      "price": 9.99,
+      "description": "Rice paper, spicy salmon, avocado, crab meat"
+    },
+    {
+      "name": "Spicy Salmon Dragon Roll",
+      "category": "Special Roll",
+      "price": 13.99,
+      "description": "Dynamite, topped with spicy salmon and tempura bits"
+    },
+    {
+      "name": "Spicy Tuna Dragon Roll",
+      "category": "Special Roll",
+      "price": 13.99,
+      "description": "Dynamite, topped with ground spicy tuna mixed with tempura bits"
+    },
+    {
+      "name": "Spider Roll",
+      "category": "Special Roll",
+      "price": 13.99,
+      "description": "Soft shell crab, avocado, crab meat, cucumber, topped with eel sauce"
     },
     {
       "name": "Volcano Roll",
       "category": "Special Roll",
-      "price": 13.95,
-      "description": "California roll topped with spicy salmon.",
-      "ingredients": ["crab meat", "avocado", "cucumber", "salmon", "spicy mayonnaise", "sushi rice", "nori"],
-      "allergens": ["shellfish", "gluten", "soy", "fish", "egg"],
+      "price": 12.99,
+      "description": "Spicy salmon, avocado, crab meat, fried and topped with spicy mayo, eel sauce and fish roe",
+      "ingredients": [
+        "crab meat",
+        "avocado",
+        "cucumber",
+        "salmon",
+        "spicy mayonnaise",
+        "sushi rice",
+        "nori"
+      ],
+      "allergens": [
+        "shellfish",
+        "gluten",
+        "soy",
+        "fish",
+        "egg"
+      ],
       "spice_level": "medium"
     },
     {
-      "name": "Salmon Sushi a la Carte",
-      "category": "Sushi and Sashimi",
-      "price": 2.50,
-      "description": "Fresh salmon on a bed of sushi rice (1 pc).",
-      "ingredients": ["salmon", "sushi rice"],
-      "allergens": ["fish"],
-      "spice_level": "none"
+      "name": "Sushi & Maki Tray",
+      "category": "Sushi & Maki Tray",
+      "price": 35.99,
+      "description": "Chef-selected assortment of nigiri and maki rolls, perfect for sharing in small, medium, or large trays"
     },
     {
-      "name": "Tuna Sushi a la Carte",
-      "category": "Sushi and Sashimi",
-      "price": 2.75,
-      "description": "Fresh tuna on a bed of sushi rice (1 pc).",
-      "ingredients": ["tuna", "sushi rice"],
-      "allergens": ["fish"],
-      "spice_level": "none"
+      "name": "Assorted Sushi",
+      "category": "Sushi & Sashimi",
+      "price": 17.99,
+      "description": "Assorted sushi (salmon, shrimp, white fish, and tuna) with roll of choice, served with miso soup and salad"
     },
     {
-      "name": "Salmon Sashimi a la Carte",
-      "category": "Sushi and Sashimi",
-      "price": 4.50,
-      "description": "Slices of fresh raw salmon (3 pcs).",
-      "ingredients": ["salmon"],
-      "allergens": ["fish"],
-      "spice_level": "none"
+      "name": "Chirashi",
+      "category": "Sushi & Sashimi",
+      "price": 18.99,
+      "description": "Assorted sashimi with rice, served with soup and salad"
     },
     {
       "name": "Salmon Lover",
-      "category": "Sushi and Sashimi Combos",
-      "price": 19.99,
-      "description": "4 pieces of salmon sashimi, 4 pieces of salmon sushi, and 6 pieces of spicy salmon roll. Served with miso soup and salad.",
-      "ingredients": ["salmon", "rice", "spicy mayonnaise", "nori", "miso paste", "tofu", "seaweed", "lettuce", "ginger", "wasabi"],
-      "allergens": ["fish", "soy", "egg"],
+      "category": "Sushi & Sashimi",
+      "price": 18.99,
+      "description": "4 salmon sashimi, 4 salmon sushi, 6 spicy salmon.\n",
+      "ingredients": [
+        "salmon",
+        "rice",
+        "spicy mayonnaise",
+        "nori",
+        "miso paste",
+        "tofu",
+        "seaweed",
+        "lettuce",
+        "ginger",
+        "wasabi"
+      ],
+      "allergens": [
+        "fish",
+        "soy",
+        "egg"
+      ],
       "spice_level": "medium"
     },
     {
-      "name": "Sushi & Sashimi Combo",
-      "category": "Sushi and Sashimi Combos",
-      "price": 23.95,
-      "description": "6 pcs sashimi, 5 pcs sushi, and 6 pcs California roll. Served with miso soup and salad.",
-      "ingredients": ["assorted fish", "rice", "crab meat", "avocado", "cucumber", "nori", "miso soup", "salad"],
-      "allergens": ["fish", "shellfish", "gluten", "soy"],
-      "spice_level": "none"
+      "name": "Salmon Lover Tray",
+      "category": "Sushi & Sashimi",
+      "price": 59.99,
+      "description": "12 pc salmon sashimi, 6 pc salmon sushi, 6pc salmon flower, 6 pc spicy salmon roll, 6 pc salmon avocado roll, and 6 pc salmon roll "
     },
     {
-      "name": "Chicken Teriyaki",
-      "category": "Kitchen Entree",
-      "price": 15.95,
-      "description": "Grilled chicken with teriyaki sauce, served with rice, miso soup, and salad.",
-      "ingredients": ["chicken", "teriyaki sauce", "rice", "miso soup", "salad"],
-      "allergens": ["gluten", "soy"],
-      "spice_level": "none"
+      "name": "Sashimi & Sushi Combo",
+      "category": "Sushi & Sashimi",
+      "price": 25.99,
+      "description": "10 pc assorted sashimi, 10 pc assorted sushi, served with miso soup and salad"
     },
     {
-      "name": "Beef Teriyaki",
-      "category": "Kitchen Entree",
-      "price": 17.95,
-      "description": "Grilled beef with teriyaki sauce, served with rice, miso soup, and salad.",
-      "ingredients": ["beef", "teriyaki sauce", "rice", "miso soup", "salad"],
-      "allergens": ["gluten", "soy"],
-      "spice_level": "none"
+      "name": "Sashimi & Sushi Maki Combo B",
+      "category": "Sushi & Sashimi",
+      "price": 25.99,
+      "description": "9 pc assorted sashimi, 5 pc assorted sushi, and 10 pc dynamite roll, served with miso soup and salad"
     },
     {
-      "name": "Salmon Teriyaki",
-      "category": "Kitchen Entree",
-      "price": 18.95,
-      "description": "Grilled salmon with teriyaki sauce, served with rice, miso soup, and salad.",
-      "ingredients": ["salmon", "teriyaki sauce", "rice", "miso soup", "salad"],
-      "allergens": ["fish", "gluten", "soy"],
-      "spice_level": "none"
+      "name": "Sashimi Combo",
+      "category": "Sushi & Sashimi",
+      "price": 20.99,
+      "description": "Assorted sashimi with salmon, shrimp, white fish, and tuna"
     },
     {
-      "name": "Bulgogi",
-      "category": "Kitchen Entree",
-      "price": 17.95,
-      "description": "Marinated sliced beef with vegetables, served with rice, miso soup, and salad.",
-      "ingredients": ["beef", "soy sauce", "sugar", "garlic", "sesame oil", "vegetables", "rice", "miso soup", "salad"],
-      "allergens": ["gluten", "soy", "sesame"],
-      "spice_level": "none"
+      "name": "Sashimi, Sushi & Maki Combo",
+      "category": "Sushi & Sashimi",
+      "price": 21.99,
+      "description": "Assorted sashimi and sushi with a choice of maki roll, served with miso soup and salad"
     },
     {
-      "name": "Chicken Katsu",
-      "category": "Kitchen Entree",
-      "price": 16.95,
-      "description": "Deep-fried breaded chicken cutlet, served with rice, miso soup, and salad.",
-      "ingredients": ["chicken", "panko breadcrumbs", "egg", "flour", "tonkatsu sauce", "rice", "miso soup", "salad"],
-      "allergens": ["gluten", "egg", "soy"],
-      "spice_level": "none"
+      "name": "Sushi, Sashimi & Maki Tray",
+      "category": "Sushi, Sashimi & Maki Tray",
+      "price": 39.99,
+      "description": "Chef-selected assortment of nigiri, sashimi, and maki rolls, perfect for sharing in small, medium, or large trays"
     },
     {
-      "name": "Chicken Fried Rice",
-      "category": "Rice and Noodles",
-      "price": 13.95,
-      "description": "Fried rice with chicken and vegetables.",
-      "ingredients": ["rice", "chicken", "egg", "mixed vegetables", "soy sauce"],
-      "allergens": ["gluten", "soy", "egg"],
-      "spice_level": "none"
+      "name": "Spicy Avocado Roll",
+      "category": "Vegetable Choice",
+      "price": 8.99
     },
     {
-      "name": "Beef Fried Rice",
-      "category": "Rice and Noodles",
-      "price": 14.95,
-      "description": "Fried rice with beef and vegetables.",
-      "ingredients": ["rice", "beef", "egg", "mixed vegetables", "soy sauce"],
-      "allergens": ["gluten", "soy", "egg"],
-      "spice_level": "none"
-    },
-    {
-      "name": "Vegetable Yaki Udon",
-      "category": "Rice and Noodles",
+      "name": "Vegetable Dragon Roll",
+      "category": "Vegetable Choice",
       "price": 12.99,
-      "description": "Pan-fried udon noodles with vegetables.",
-      "ingredients": ["udon noodles", "mixed vegetables", "soy sauce"],
-      "allergens": ["gluten", "soy"],
-      "spice_level": "none"
+      "description": "deep fried Yam tempura, boiled asparagus filling topped with slice avacado, 8 pieces"
     },
     {
-      "name": "Chicken Yaki Udon",
-      "category": "Rice and Noodles",
-      "price": 14.95,
-      "description": "Pan-fried udon noodles with chicken and vegetables.",
-      "ingredients": ["udon noodles", "chicken", "mixed vegetables", "soy sauce"],
-      "allergens": ["gluten", "soy"],
-      "spice_level": "none"
+      "name": "Vegetable Golden Dragon",
+      "category": "Vegetable Choice",
+      "price": 11.99,
+      "description": "Avacado, cucumber, fried asparagus, topped with fried yam"
     },
     {
-      "name": "Beef Short Rib Bento Box",
-      "category": "Bento Box",
-      "price": 17.99,
-      "description": "Grilled marinated short ribs served with miso soup and salad.",
-      "ingredients": ["beef short ribs", "rice", "salad", "miso soup", "tempura"],
-      "allergens": ["gluten", "soy"],
-      "spice_level": "none"
+      "name": "Veggie Roll Set",
+      "category": "Vegetable Choice",
+      "price": 12.99,
+      "description": "Chef-selected assortment of vegetarian rolls, served with miso soup and salad"
     },
     {
-      "name": "Chicken Teriyaki Bento Box",
-      "category": "Bento Box",
-      "price": 15.99,
-      "description": "Grilled chicken with teriyaki sauce, served with miso soup and salad.",
-      "ingredients": ["chicken", "teriyaki sauce", "rice", "salad", "miso soup", "tempura"],
-      "allergens": ["gluten", "soy"],
-      "spice_level": "none"
+      "name": "Yaki Udon",
+      "category": "Yaki Udon",
+      "price": 11.99,
+      "description": "Stir-fried udon noodles, choice of Vegetable, Chicken, or Beef"
     }
   ]
 }
