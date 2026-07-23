@@ -7,7 +7,7 @@
       "Sunday - Thursday": "12:00 PM - 10:30 PM",
       "Friday & Saturday": "12:00 PM - 11:00 PM"
     },
-    "parking": "Information not readily available online, but typically consists of street parking in this area.",
+    "parking": "Street parking is available, and there is a Green P (municipal) parking lot nearby.",
     "ratings": {
       "google": {
         "ratingValue": 4.3,
@@ -1107,5 +1107,12 @@
       "price": 11.99,
       "description": "Stir-fried udon noodles, choice of Vegetable, Chicken, or Beef"
     }
-  ]
+  ],
+  "policies": {
+    "reservations": "We take reservations by phone — please call us at 416-766-2888.",
+    "ordering_and_delivery": "Available for dine-in and takeout. Delivery is offered through UberEats, DoorDash, and Skip the Dishes.",
+    "payment": "We accept cash and most major credit and debit cards.",
+    "parking": "Street parking is available, and there is a Green P (municipal) parking lot nearby.",
+    "substitutions_and_dietary": "Substitutions and modifications depend on the specific item — please ask your server to confirm what's possible. Customers with allergies should always confirm with our staff before ordering."
+  }
 }
