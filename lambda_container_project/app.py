@@ -266,7 +266,7 @@ def handle_allergy_intent(event):
             model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0,
             max_tokens=5
         )
-        llm_decision = completion.choices[0].message.content.strip().upper()
+        llm_decision = (completion.choices[0].message.content or '').strip().upper()
         
         if llm_decision == 'YES':
              print("ALLERGY: LLM determined user has an allergy. Eliciting details.")
@@ -323,9 +323,11 @@ def lambda_handler(event, context):
             message = "You're welcome! Have a great day."
             return close_dialog(event, {}, 'Fulfilled', {'contentType': 'PlainText', 'content': message})
         else:
-            print("HANDLER: Classifier was unsure. Responding with help message.")
-            message = "I'm sorry, I can only take orders or answer questions about the menu. How can I help?"
-            return elicit_slot(event, {}, 'OrderQuery', message, reset=True)
+            print("HANDLER: Classifier unsure — routing to menu Q&A as a safe default.")
+            # Don't elicit a slot here: the current intent is FallbackIntent, which
+            # has no OrderQuery slot (Lex rejects it as an invalid slot). The scoped
+            # Q&A answers menu questions and politely declines anything off-topic.
+            return get_rag_answer(event)
 
     if intent_name == 'GreetingIntent':
         greetings = ["Hello! I'm ready to take your order. What can I get for you?", "Hi there! What would you like to order today?", "Welcome! Tell me what you'd like to eat."]
@@ -369,7 +371,7 @@ def classify_user_intent(transcript):
             temperature=0.0,
             max_tokens=10
         )
-        response = completion.choices[0].message.content.strip().upper()
+        response = (completion.choices[0].message.content or '').strip().upper()
         if response in ['QUESTION', 'ORDER', 'MODIFICATION', 'FAREWELL']:
             print(f"CLASSIFIER: LLM classified intent as: {response}")
             return response
