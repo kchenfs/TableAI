@@ -5,6 +5,7 @@ import os
 import decimal
 import time
 import re
+import difflib
 from openai import OpenAI
 import traceback
 import random
@@ -72,8 +73,7 @@ _menu_cache_timestamp = 0
 _menu_raw = None
 _menu_lookup = None
 _menu_embeddings_cache = None
-_rag_index = None
-_rag_chunks = None
+_kb_text = None  # full knowledge base text, loaded once for Q&A (no embeddings)
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
@@ -152,18 +152,22 @@ def get_menu(force_refresh=False):
             print(f"ERROR loading menu: {e}"); traceback.print_exc(); raise
     return _menu_raw, _menu_lookup, _menu_embeddings_cache
 def _fuzzy_find(normalized_name, menu_lookup, embeddings_cache, cutoff=0.6):
+    # embeddings_cache is kept in the signature for compatibility but is no longer
+    # used — matching is done with local string similarity (difflib), so there is
+    # NO external embedding API dependency (previously Google Gemini).
     if not normalized_name: return None, 0.0
     if normalized_name in menu_lookup: return normalized_name, 1.0
-    try:
-        query_embedding = genai.embed_content(model=GEMINI_EMBEDDING_MODEL, content=normalized_name, task_type="RETRIEVAL_QUERY")['embedding']
-    except Exception as e:
-        print(f"Error getting embedding for '{normalized_name}': {e}"); return None, 0.0
-    best_score, best_match_key = -1, None
-    for item_embedding in embeddings_cache:
-        v1, v2 = query_embedding, item_embedding['embedding']
-        similarity = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-        if similarity > best_score: best_score, best_match_key = similarity, item_embedding['normalized_key']
-    return (best_match_key, best_score) if best_score >= cutoff else (None, 0.0)
+    keys = list(menu_lookup.keys())
+    # 1) closest key by SequenceMatcher ratio, honoring the cutoff
+    matches = difflib.get_close_matches(normalized_name, keys, n=1, cutoff=cutoff)
+    if matches:
+        score = difflib.SequenceMatcher(None, normalized_name, matches[0]).ratio()
+        return matches[0], score
+    # 2) substring fallback ("green tea" <-> "hot green tea")
+    for k in keys:
+        if normalized_name in k or k in normalized_name:
+            return k, 0.8
+    return None, 0.0
 def _check_if_option_in_item_name(parsed_name, menu_entry):
     detected_options, customer_words = {}, _normalize_name(parsed_name).split()
     for _, opt_meta in menu_entry['options'].items():
@@ -191,45 +195,42 @@ def _normalize_options(detected_options, menu_entry):
     return normalized_options
 
 def get_rag_answer(event):
-    global _rag_index, _rag_chunks
+    """Answer restaurant/menu questions from the FULL knowledge base in-context.
+    The KB is small (~few thousand tokens), so we pass all of it to the model
+    rather than doing embedding-based retrieval — no external embedding API
+    (Google) is needed and the model sees the whole menu. The scoped system
+    prompt also keeps answers on-topic (a guardrail against off-topic abuse)."""
+    global _kb_text
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
-    transcript = event.get('inputTranscript', '')
-    print(f"RAG: Getting answer for question: '{transcript}'")
-
+    transcript = (event.get('inputTranscript', '') or '').strip()
+    print(f"QA: Getting answer for question: '{transcript}'")
     try:
-        if _rag_index is None:
-            print("RAG: Loading knowledge base from local container image.")
-            _rag_index = faiss.read_index('rag_index.faiss')
+        if _kb_text is None:
             with open('rag_chunks.json', 'r') as f:
-                _rag_chunks = json.load(f)
-            print("RAG: Index and chunks loaded successfully from local image.")
-
-        query_embedding = genai.embed_content(model=GEMINI_EMBEDDING_MODEL, content=transcript, task_type="RETRIEVAL_QUERY")['embedding']
-        distances, indices = _rag_index.search(np.array([query_embedding]), k=3)
-        
-        retrieved_context = "\n".join([_rag_chunks[i] for i in indices[0]])
-        print(f"RAG: Retrieved context:\n{retrieved_context}")
-
-        prompt = f"""
-        Based *only* on the context provided below, answer the user's question. If the context does not contain the answer, say you don't have that information.
-
-        Context:
-        {retrieved_context}
-
-        Question: {transcript}
-        """
-        
+                chunks = json.load(f)
+            _kb_text = "\n".join(chunks) if isinstance(chunks, list) else str(chunks)
+        system = (
+            "You are the friendly assistant for Momotaro Sushi, a Japanese restaurant in Toronto. "
+            "Answer the customer's question using ONLY the restaurant information provided below "
+            "(menu items, ingredients, prices, hours, address, etc.). "
+            "If the answer isn't in that information, say you don't have that detail and suggest they "
+            "call us at 416-766-2888. "
+            "ONLY discuss Momotaro Sushi, our menu, and dining with us. If the customer asks about "
+            "anything unrelated (other topics, general knowledge, code, writing, math, etc.), politely "
+            "decline in one sentence and steer them back to the menu or their order. "
+            "Keep answers short, warm, and helpful.\n\n"
+            f"RESTAURANT INFORMATION:\n{_kb_text}"
+        )
         completion = client.chat.completions.create(
             model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": transcript}],
+            temperature=0.2, max_tokens=350,
         )
         final_answer = completion.choices[0].message.content
-
     except Exception as e:
-        print(f"RAG: Error during RAG pipeline: {e}")
-        traceback.print_exc()
-        final_answer = "I'm sorry, I encountered an error while looking up that information."
+        print(f"QA: Error: {e}"); traceback.print_exc()
+        final_answer = "I'm sorry, I had trouble with that. Please try again, or call us at 416-766-2888."
 
     return close_dialog(event, session_attrs, 'Fulfilled', {'contentType': 'PlainText', 'content': final_answer})
 
@@ -262,7 +263,8 @@ def handle_allergy_intent(event):
     """
     try:
         completion = client.chat.completions.create(
-            model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0
+            model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], temperature=0.0,
+            max_tokens=5
         )
         llm_decision = completion.choices[0].message.content.strip().upper()
         
@@ -282,6 +284,20 @@ def lambda_handler(event, context):
     
     intent_name = event['sessionState']['intent']['name']
     session_attrs = event['sessionState'].get('sessionAttributes', {}) or {}
+
+    # --- Abuse / token-farming guardrails (run BEFORE any LLM call) ---
+    # 1) Cap input length so nobody can push huge prompts through our LLM.
+    _transcript = event.get('inputTranscript', '') or ''
+    if len(_transcript) > 400:
+        return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText',
+            'content': "That's a long message! I can only help with Momotaro's menu and orders — please keep it short."})
+    # 2) Cap messages per chat session so a single visitor can't farm the model.
+    _turns = int(session_attrs.get('turnCount', '0') or '0') + 1
+    session_attrs['turnCount'] = str(_turns)
+    event['sessionState']['sessionAttributes'] = session_attrs
+    if _turns > 40:
+        return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText',
+            'content': "We've chatted quite a bit! For more help, please call us at 416-766-2888."})
 
     if intent_name == 'FallbackIntent':
         transcript = event.get('inputTranscript', '')
@@ -350,7 +366,8 @@ def classify_user_intent(transcript):
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
+            temperature=0.0,
+            max_tokens=10
         )
         response = completion.choices[0].message.content.strip().upper()
         if response in ['QUESTION', 'ORDER', 'MODIFICATION', 'FAREWELL']:
@@ -388,7 +405,8 @@ def handle_modification_request(event):
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            max_tokens=512
         )
         parsed_changes = json.loads(completion.choices[0].message.content)
         print(f"MODIFICATION: Parsed changes from LLM: {parsed_changes}")
@@ -682,7 +700,7 @@ def invoke_openrouter_parser(user_text):
     examples = [{"role": "user", "content": "I want two green dragon rolls and one nestea."}, {"role": "assistant", "content": json.dumps({"order_items": [{"item_name": "green dragon roll", "quantity": 2}, {"item_name": "nestea", "quantity": 1}]})}, {"role": "user", "content": "One Sashimi, Sushi & Maki Combo B and three seaweed salads."}, {"role": "assistant", "content": json.dumps({"order_items": [{"item_name": "Sashimi, Sushi & Maki Combo", "quantity": 1, "options": {"Combo Choice": "B"}}, {"item_name": "Seaweed Salad", "quantity": 3}]})}, {"role": "user", "content": "I'd like beef gyoza and a coke."}, {"role": "assistant", "content": json.dumps({"order_items": [{"item_name": "beef gyoza", "quantity": 1}, {"item_name": "coke", "quantity": 1}]})}]
     prompt_user = f'Customer said: "{user_text}". Respond with JSON only.'
     try:
-        completion = client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "system", "content": system}, *examples, {"role": "user", "content": prompt_user}], stream=False)
+        completion = client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "system", "content": system}, *examples, {"role": "user", "content": prompt_user}], stream=False, max_tokens=512)
         response_text = completion.choices[0].message.content
         json_str = _extract_json_from_text(response_text)
         if json_str: 
