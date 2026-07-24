@@ -282,3 +282,4 @@ ratelimiter.py
 
 # Generated Lambda zip artifact (built by terraform archive_file on apply)
 infrastructure/status_lambda.zip
+infrastructure/telegram_lambda.zip
