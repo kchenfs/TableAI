@@ -721,7 +721,12 @@ def invoke_openrouter_parser(user_text):
 # Lex persists only what we return, so any response that omits them silently
 # drops the customer into the wrong mode (e.g. a takeout order treated as
 # dine-in and rejected for having no table). Always carry them forward.
-_STICKY_ATTRS = ('orderMode', 'tableId')
+_STICKY_ATTRS = (
+    'orderMode', 'tableId',          # where the order came from
+    'turnCount',                     # abuse cap — must not reset on a greeting
+    'orderPlaced',                   # duplicate order/charge guard
+    'pendingTakeoutOrderId', 'pendingCheckoutUrl', 'pendingCheckoutTotal',  # pay button
+)
 
 
 def _preserve(event, session_attrs):
