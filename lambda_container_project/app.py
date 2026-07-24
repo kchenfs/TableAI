@@ -208,7 +208,9 @@ def get_rag_answer(event):
         if _kb_text is None:
             # The full knowledge base (restaurant info + every item's ingredients,
             # allergens, spice level, price) — small enough to pass entirely.
-            with open('knowledge_base.json', 'r') as f:
+            # Explicit encoding + tolerant errors: a single stray non-UTF-8 byte
+            # in the KB must never take the whole Q&A path down.
+            with open('knowledge_base.json', 'r', encoding='utf-8', errors='replace') as f:
                 _kb_text = f.read()
         system = (
             "You are the friendly assistant for Momotaro Sushi, a Japanese restaurant in Toronto. "

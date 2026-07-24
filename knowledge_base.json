@@ -1109,10 +1109,10 @@
     }
   ],
   "policies": {
-    "reservations": "We take reservations by phone — please call us at 416-766-2888.",
+    "reservations": "We take reservations by phone - please call us at 416-766-2888.",
     "ordering_and_delivery": "Available for dine-in and takeout. Delivery is offered through UberEats, DoorDash, and Skip the Dishes.",
     "payment": "We accept cash and most major credit and debit cards.",
     "parking": "Street parking is available, and there is a Green P (municipal) parking lot nearby.",
-    "substitutions_and_dietary": "Substitutions and modifications depend on the specific item — please ask your server to confirm what's possible. Customers with allergies should always confirm with our staff before ordering."
+    "substitutions_and_dietary": "Substitutions and modifications depend on the specific item - please ask your server to confirm what's possible. Customers with allergies should always confirm with our staff before ordering."
   }
 }
