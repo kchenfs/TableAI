@@ -26,5 +26,5 @@ variable "stripe_secret_param" {
 variable "openrouter_model" {
   description = "OpenRouter model slug for the fulfillment Lambda's LLM calls. Use a NON-reasoning instruct model — reasoning models (e.g. gpt-oss) emit reasoning tokens and return empty content under tight max_tokens caps."
   type        = string
-  default     = "google/gemma-4-31b-it:free"
+  default     = "google/gemma-4-26b-a4b-it:free"
 }
