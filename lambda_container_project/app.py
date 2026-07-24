@@ -335,7 +335,7 @@ def lambda_handler(event, context):
     if intent_name == 'GreetingIntent':
         greetings = ["Hello! I'm ready to take your order. What can I get for you?", "Hi there! What would you like to order today?", "Welcome! Tell me what you'd like to eat."]
         response_message = random.choice(greetings)
-        response = {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': 'OrderQuery'}, 'intent': {'name': 'OrderFood', 'slots': {'OrderQuery': None, 'DrinkQuery': None, 'OptionChoice': None}, 'state': 'InProgress'}, 'sessionAttributes': {}}, 'messages': [{'contentType': 'PlainText', 'content': response_message}]}
+        response = {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': 'OrderQuery'}, 'intent': {'name': 'OrderFood', 'slots': {'OrderQuery': None, 'DrinkQuery': None, 'OptionChoice': None}, 'state': 'InProgress'}, 'sessionAttributes': _preserve(event, session_attrs)}, 'messages': [{'contentType': 'PlainText', 'content': response_message}]}
         print(f"RESPONSE to Lex: {json.dumps(response)}")
         return response
 
@@ -717,24 +717,45 @@ def invoke_openrouter_parser(user_text):
     except Exception as e:
         print(f"Error calling OpenRouter: {e}"); traceback.print_exc()
         return {'order_items': []}
+# Attributes set by the storefront that identify WHERE the order comes from.
+# Lex persists only what we return, so any response that omits them silently
+# drops the customer into the wrong mode (e.g. a takeout order treated as
+# dine-in and rejected for having no table). Always carry them forward.
+_STICKY_ATTRS = ('orderMode', 'tableId')
+
+
+def _preserve(event, session_attrs):
+    """Re-apply the sticky order context from the incoming event."""
+    incoming = event.get('sessionState', {}).get('sessionAttributes', {}) or {}
+    merged = dict(session_attrs or {})
+    for k in _STICKY_ATTRS:
+        if not merged.get(k) and incoming.get(k):
+            merged[k] = incoming[k]
+    return merged
+
+
 def elicit_slot(event, session_attrs, slot_to_elicit, message_content, reset=False):
     intent = event['sessionState']['intent']
     if reset:
         intent['slots'] = {"OrderQuery": None, "DrinkQuery": None, "OptionChoice": None}
         session_attrs = {}
+    session_attrs = _preserve(event, session_attrs)
     response = {'sessionState': {'dialogAction': {'type': 'ElicitSlot', 'slotToElicit': slot_to_elicit}, 'intent': intent, 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
     print(f"RESPONSE to Lex: {json.dumps(response)}")
     return response
 def confirm_intent(event, session_attrs, message_content):
+    session_attrs = _preserve(event, session_attrs)
     response = {'sessionState': {'dialogAction': {'type': 'ConfirmIntent'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
     print(f"RESPONSE to Lex: {json.dumps(response)}")
     return response
 def delegate(event, session_attrs):
+    session_attrs = _preserve(event, session_attrs)
     response = {'sessionState': {'dialogAction': {'type': 'Delegate'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}}
     print(f"RESPONSE to Lex: {json.dumps(response)}")
     return response
 def close_dialog(event, session_attrs, fulfillment_state, message):
     event['sessionState']['intent']['state'] = fulfillment_state
+    session_attrs = _preserve(event, session_attrs)
     response = {'sessionState': {'dialogAction': {'type': 'Close'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}, 'messages': [message]}
     print(f"RESPONSE to Lex: {json.dumps(response)}")
     return response
