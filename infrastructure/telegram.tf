@@ -12,7 +12,7 @@ data "archive_file" "telegram_zip" {
 variable "telegram_chat_id" {
   description = "Telegram chat id that receives the takeout order alerts"
   type        = string
-  default     = ""
+  default     = "8318179389"
 }
 
 resource "aws_iam_role" "telegram_notifier_role" {
