@@ -641,9 +641,10 @@ def fulfill_order(event, allergy_info=None):
             order = build_takeout_order(order_id, order_items, total_cents, notes)
             # DynamoDB rejects floats — convert them to Decimal on the way in.
             orders_table.put_item(Item=json.loads(json.dumps(order), parse_float=_Decimal))
+            success_url = f"{STRIPE_SUCCESS_URL}?orderId={order_id}"
             url = create_checkout_session(
                 order_id, order_items, total_cents,
-                STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, _stripe_key())
+                success_url, STRIPE_CANCEL_URL, _stripe_key())
             session_attrs['orderPlaced'] = 'true'
             session_attrs['pendingTakeoutOrderId'] = order_id
             # Expose the checkout URL + total as session attributes so the

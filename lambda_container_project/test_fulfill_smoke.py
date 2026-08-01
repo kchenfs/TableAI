@@ -113,3 +113,24 @@ def test_idempotency_short_circuits(monkeypatch):
     assert not app.sns_client.publish.called
     assert not app.orders_table.put_item.called
     assert resp["sessionState"]["dialogAction"]["type"] == "Close"
+
+
+def test_takeout_success_url_includes_order_id(monkeypatch):
+    import app
+    monkeypatch.setattr(app, "get_menu", lambda *a, **k: (None, FAKE_MENU_LOOKUP, None))
+    monkeypatch.setattr(app, "orders_table", MagicMock())
+    monkeypatch.setattr(app, "sns_client", MagicMock())
+    monkeypatch.setattr(app, "_stripe_key", lambda: "rk_live_dummy")
+
+    captured = {}
+    def _fake_create_checkout_session(order_id, order_items, total_cents, success_url, cancel_url, api_key):
+        captured["order_id"] = order_id
+        captured["success_url"] = success_url
+        return "https://checkout.stripe.com/c/pay/cs_test_x"
+    monkeypatch.setattr(app, "create_checkout_session", _fake_create_checkout_session)
+
+    app.fulfill_order(_order_event("takeout"))
+
+    assert captured["order_id"] in captured["success_url"]
+    assert captured["success_url"].startswith(app.STRIPE_SUCCESS_URL)
+    assert f"orderId={captured['order_id']}" in captured["success_url"]
