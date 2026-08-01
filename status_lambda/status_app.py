@@ -1,5 +1,6 @@
 import json
 import os
+from decimal import Decimal
 import boto3
 
 dynamodb = boto3.resource("dynamodb")
@@ -8,8 +9,15 @@ table = dynamodb.Table(os.environ.get("ORDERS_TABLE_NAME", "momotaroOrdersDataba
 _CORS = {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"}
 
 
+class _DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+
+
 def _resp(code, body):
-    return {"statusCode": code, "headers": _CORS, "body": json.dumps(body)}
+    return {"statusCode": code, "headers": _CORS, "body": json.dumps(body, cls=_DecimalEncoder)}
 
 
 def lambda_handler(event, context):
@@ -24,4 +32,6 @@ def lambda_handler(event, context):
         "orderId": item.get("orderId"),
         "paymentStatus": item.get("paymentStatus"),
         "orderStatus": item.get("orderStatus"),
+        "items": item.get("items", []),
+        "total": item.get("total"),
     })
