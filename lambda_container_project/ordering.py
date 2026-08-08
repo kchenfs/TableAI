@@ -21,21 +21,31 @@ def _normalize_name(s):
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
-def _option_modifier(raw_item, group, choice):
-    """Return the priceModifier (Decimal) for a chosen option, else 0."""
+def _option_modifier(raw_item, group, choice, mode="takeout"):
+    """Return the priceModifier (Decimal) for a chosen option, else 0.
+
+    In dine-in mode prefers dineInPriceModifier; an absent value means
+    "same as priceModifier", which is how an unmigrated option is represented.
+    """
     for opt_group in raw_item.get("Options", []) or []:
         if _normalize_name(opt_group.get("name")) == _normalize_name(group):
             for opt in opt_group.get("items", []) or []:
                 if _normalize_name(opt.get("name")) == _normalize_name(choice):
+                    if mode == "dine-in" and opt.get("dineInPriceModifier") is not None:
+                        return Decimal(str(opt.get("dineInPriceModifier")))
                     return Decimal(str(opt.get("priceModifier", 0)))
     return Decimal("0")
 
 
-def resolve_and_price(parsed_items, menu_lookup):
+def resolve_and_price(parsed_items, menu_lookup, mode="takeout"):
     """Resolve parsed chat items against the menu; return (order_items, total_cents).
 
     order_items are website-shaped dicts; total_cents is the tax-inclusive total.
     Raises UnknownMenuItem if any item cannot be resolved by exact normalized name.
+
+    mode is 'dine-in' or 'takeout'. Only an explicit 'dine-in' selects dine-in
+    pricing, so an unexpected value falls back to takeout - the higher, current
+    price - rather than silently undercharging.
     """
     order_items = []
     subtotal = Decimal("0")
@@ -60,11 +70,16 @@ def resolve_and_price(parsed_items, menu_lookup):
         if quantity < 1 or quantity > 50:
             raise UnknownMenuItem(name)
 
-        unit_price = Decimal(str(raw.get("Price", "0")))
+        # An absent DineInPrice means "same as takeout" - that is how an
+        # unmigrated item is represented, so it must fall back, not fail.
+        if mode == "dine-in" and raw.get("DineInPrice") is not None:
+            unit_price = Decimal(str(raw.get("DineInPrice")))
+        else:
+            unit_price = Decimal(str(raw.get("Price", "0")))
         options = line.get("options") or {}
         option_parts = []
         for group, choice in options.items():
-            unit_price += _option_modifier(raw, group, choice)
+            unit_price += _option_modifier(raw, group, choice, mode)
             option_parts.append(f"{group}: {choice}")
 
         line_subtotal = unit_price * quantity

@@ -118,3 +118,73 @@ def test_build_takeout_order_shape():
     assert o["paymentStatus"] == "UNPAID"
     assert o["total"] == 13.56
     assert "tableId" not in o
+
+# --- per-channel pricing -------------------------------------------------
+
+DINE_IN_MENU = {
+    "bento box": {
+        "normalized_name": "bento box",
+        "raw_item": {
+            "ItemName": "Bento Box", "Price": "15.99", "DineInPrice": "14.99",
+            "ItemNumber": Decimal("96"), "Location": "back",
+            "Options": [
+                {"name": "Select Bento Box", "items": [
+                    {"name": "Beef Short Rib Bento Box",
+                     "priceModifier": 2, "dineInPriceModifier": 1},
+                    {"name": "Tempura Bento Box", "priceModifier": 0},
+                ]},
+            ],
+        },
+    },
+    "green tea": {
+        "normalized_name": "green tea",
+        "raw_item": {
+            # No DineInPrice - the "same price in both channels" case.
+            "ItemName": "Green Tea", "Price": "2.00",
+            "ItemNumber": Decimal("200"), "Location": "front", "Options": [],
+        },
+    },
+}
+
+
+def test_takeout_mode_uses_takeout_price():
+    items, _ = resolve_and_price(
+        [{"item_name": "bento box", "quantity": 1, "options": {}}],
+        DINE_IN_MENU, "takeout")
+    assert items[0]["price"] == 15.99
+
+
+def test_dine_in_mode_uses_dine_in_price():
+    items, _ = resolve_and_price(
+        [{"item_name": "bento box", "quantity": 1, "options": {}}],
+        DINE_IN_MENU, "dine-in")
+    assert items[0]["price"] == 14.99
+
+
+def test_dine_in_falls_back_to_price_when_no_dine_in_price():
+    items, _ = resolve_and_price(
+        [{"item_name": "green tea", "quantity": 1, "options": {}}],
+        DINE_IN_MENU, "dine-in")
+    assert items[0]["price"] == 2.00
+
+
+def test_defaults_to_takeout_when_mode_omitted():
+    items, _ = resolve_and_price(
+        [{"item_name": "bento box", "quantity": 1, "options": {}}], DINE_IN_MENU)
+    assert items[0]["price"] == 15.99
+
+
+def test_option_modifier_resolves_per_channel():
+    line = [{"item_name": "bento box", "quantity": 1,
+             "options": {"Select Bento Box": "Beef Short Rib Bento Box"}}]
+    takeout, _ = resolve_and_price(line, DINE_IN_MENU, "takeout")
+    dine_in, _ = resolve_and_price(line, DINE_IN_MENU, "dine-in")
+    assert takeout[0]["price"] == 17.99   # 15.99 + 2
+    assert dine_in[0]["price"] == 15.99   # 14.99 + 1
+
+
+def test_option_modifier_falls_back_when_no_dine_in_modifier():
+    line = [{"item_name": "bento box", "quantity": 1,
+             "options": {"Select Bento Box": "Tempura Bento Box"}}]
+    dine_in, _ = resolve_and_price(line, DINE_IN_MENU, "dine-in")
+    assert dine_in[0]["price"] == 14.99   # 14.99 + 0

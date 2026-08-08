@@ -626,15 +626,17 @@ def fulfill_order(event, allergy_info=None):
                 {'contentType': 'PlainText', 'content': "I didn't catch any items — what would you like?"})
 
         _, menu_lookup, _ = get_menu()
+        # Read the mode BEFORE pricing: a dine-in order priced without it would
+        # be charged takeout prices.
+        mode = session_attrs.get('orderMode', 'dine-in')
         try:
-            order_items, total_cents = resolve_and_price(parsed_items, menu_lookup)
+            order_items, total_cents = resolve_and_price(parsed_items, menu_lookup, mode)
         except UnknownMenuItem as e:
             return close_dialog(event, session_attrs, 'Failed',
                 {'contentType': 'PlainText',
                  'content': f"Sorry, I couldn't find \"{e.item_name}\" on the menu. Could you rephrase it?"})
 
         notes = session_attrs.get('orderNotes', '')
-        mode = session_attrs.get('orderMode', 'dine-in')
 
         if mode == 'takeout':
             order_id = new_order_id('TKOT')
