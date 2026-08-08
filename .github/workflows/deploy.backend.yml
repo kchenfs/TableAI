@@ -11,6 +11,7 @@ env:
   ECR_REPOSITORY: momotaro-lex-bot
   AWS_REGION: ca-central-1
   IMAGE_TAG: ${{ github.sha }}
+  LAMBDA_FUNCTION: TableAILexFulfillmentHandler
 
 jobs:
   deploy:
@@ -49,3 +50,35 @@ jobs:
           docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:${IMAGE_TAG}
           docker push $ECR_REPOSITORY_URI:latest
           docker push $ECR_REPOSITORY_URI:${IMAGE_TAG}
+
+      # Pushing to ECR does NOT change what the Lambda runs. A container Lambda
+      # is pinned to the image DIGEST resolved when the function was last
+      # updated, so a new :latest sits in the registry, unused, until this call
+      # is made. Without this step the pipeline goes green while the function
+      # keeps serving old code - which is exactly what happened on 2026-08-08,
+      # when a successful build left the Lambda running a week-old image.
+      #
+      # The immutable ${IMAGE_TAG} (the commit SHA) is used rather than :latest
+      # so every deploy is traceable to the commit that produced it.
+      - name: Deploy Image to Lambda
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          aws lambda update-function-code \
+            --function-name "${LAMBDA_FUNCTION}" \
+            --image-uri "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}" \
+            --region "${AWS_REGION}" \
+            --no-cli-pager
+
+          # update-function-code returns immediately; the rollout is async.
+          # Wait for it so a failed deploy fails the build instead of passing
+          # silently, and so the job reflects the real end state.
+          aws lambda wait function-updated \
+            --function-name "${LAMBDA_FUNCTION}" \
+            --region "${AWS_REGION}"
+
+          aws lambda get-function-configuration \
+            --function-name "${LAMBDA_FUNCTION}" \
+            --region "${AWS_REGION}" \
+            --query '{State:State,LastUpdateStatus:LastUpdateStatus}' \
+            --output json
