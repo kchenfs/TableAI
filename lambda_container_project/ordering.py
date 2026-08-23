@@ -141,7 +141,30 @@ def build_dinein_order(order_id, table_id, items, total_cents, notes):
     }
 
 
-def build_takeout_order(order_id, items, total_cents, notes):
+_CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+
+
+def sanitize_customer_name(raw):
+    """Normalize a pickup name for storage and printing, or None when there is
+    nothing usable.
+
+    Kept in lockstep with checkout_api.sanitize_customer_name in momotaro-fanout
+    so every channel (web, chatbot, Stripe fallback) agrees on what a name is:
+    collapse whitespace, strip control characters, truncate to 40. Returns None
+    (never "") so an absent name leaves the Stripe billing-name fallback able to
+    fire. Never raises — a bad name must not block a paid order.
+    """
+    if raw is None:
+        return None
+    try:
+        text = ' '.join(str(raw).split())
+        text = _CONTROL_CHARS_RE.sub('', text)
+        return text[:40] or None
+    except Exception:
+        return None
+
+
+def build_takeout_order(order_id, items, total_cents, notes, customer_name=None):
     """Build a takeout order dict shaped for SNS/DynamoDB.
 
     Args:
@@ -149,12 +172,15 @@ def build_takeout_order(order_id, items, total_cents, notes):
         items: List of order items (resolved by resolve_and_price)
         total_cents: Total in cents (including tax)
         notes: Order notes (optional)
+        customer_name: Pickup name (optional). Included only when present, so an
+            absent name matches the web path's absent-means-unset convention.
 
     Returns:
-        dict with orderId, orderType, orderStatus, paymentStatus, items, notes, total, orderDate
+        dict with orderId, orderType, orderStatus, paymentStatus, items, notes,
+        total, orderDate, and customerName when a name was given
         (no tableId for takeout orders)
     """
-    return {
+    order = {
         "orderId": order_id,
         "orderType": "takeout",
         "orderStatus": "PENDING_PAYMENT",
@@ -164,3 +190,6 @@ def build_takeout_order(order_id, items, total_cents, notes):
         "total": total_cents / 100,
         "orderDate": _now_iso(),
     }
+    if customer_name:
+        order["customerName"] = customer_name
+    return order
