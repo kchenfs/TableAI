@@ -45,7 +45,7 @@ import traceback as _traceback
 import boto3 as _boto3
 from decimal import Decimal as _Decimal
 from ordering import (resolve_and_price, new_order_id, build_dinein_order,
-                      build_takeout_order, UnknownMenuItem)
+                      build_takeout_order, sanitize_customer_name, UnknownMenuItem)
 from payments import create_checkout_session
 
 sns_client = _boto3.client("sns")
@@ -301,6 +301,19 @@ def lambda_handler(event, context):
     if _turns > 40:
         return close_dialog(event, session_attrs, 'Failed', {'contentType': 'PlainText',
             'content': "We've chatted quite a bit! For more help, please call us at 416-766-2888."})
+
+    # If we asked for the pickup name last turn, this turn's free text IS the
+    # name — capture it and resume takeout fulfillment before any intent routing
+    # or LLM work, so "Ken" isn't misread as a new order or a menu question.
+    if session_attrs.get('awaitingPickupName') == 'true':
+        name = sanitize_customer_name(event.get('inputTranscript', ''))
+        if not name:
+            return elicit_intent(event, session_attrs,
+                "Sorry, I didn't catch that — what name should we put on the order for pickup?")
+        session_attrs['pickupName'] = name
+        session_attrs.pop('awaitingPickupName', None)
+        event['sessionState']['sessionAttributes'] = session_attrs
+        return fulfill_order(event)
 
     if intent_name == 'FallbackIntent':
         transcript = event.get('inputTranscript', '')
@@ -639,8 +652,20 @@ def fulfill_order(event, allergy_info=None):
         notes = session_attrs.get('orderNotes', '')
 
         if mode == 'takeout':
+            # Collect a pickup name before taking payment so the bag ticket
+            # self-labels. Ask once; the answer is captured at the top of
+            # lambda_handler and re-enters here with pickupName set. Absent name
+            # would still work (Task 5 Stripe fallback), but asking makes the
+            # name the customer chose the one that prints.
+            pickup_name = sanitize_customer_name(session_attrs.get('pickupName'))
+            if not pickup_name:
+                session_attrs['awaitingPickupName'] = 'true'
+                return elicit_intent(event, session_attrs,
+                    "Last thing — what name should we put on the order for pickup?")
+            session_attrs.pop('awaitingPickupName', None)
+
             order_id = new_order_id('TKOT')
-            order = build_takeout_order(order_id, order_items, total_cents, notes)
+            order = build_takeout_order(order_id, order_items, total_cents, notes, pickup_name)
             # DynamoDB rejects floats — convert them to Decimal on the way in.
             orders_table.put_item(Item=json.loads(json.dumps(order), parse_float=_Decimal))
             success_url = f"{STRIPE_SUCCESS_URL}?orderId={order_id}"
@@ -661,7 +686,8 @@ def fulfill_order(event, allergy_info=None):
             # required '#...' fragment -> the clicked link 404s / shows a blank page.
             # A markdown link preserves the FULL href.
             msg = (f"Your total is **${total_cents/100:.2f}**. "
-                   f"[Tap here to pay securely and confirm your order]({url})")
+                   f"[Tap here to pay securely and confirm your order]({url})\n\n"
+                   f"When you arrive, just tell us it's for **{pickup_name}**.")
             return close_dialog(event, session_attrs, 'Fulfilled',
                 {'contentType': 'CustomPayload', 'content': msg})
 
@@ -729,6 +755,7 @@ _STICKY_ATTRS = (
     'turnCount',                     # abuse cap — must not reset on a greeting
     'orderPlaced',                   # duplicate order/charge guard
     'pendingTakeoutOrderId', 'pendingCheckoutUrl', 'pendingCheckoutTotal',  # pay button
+    'pickupName',                    # takeout pickup name, captured before payment
 )
 
 
@@ -759,6 +786,14 @@ def confirm_intent(event, session_attrs, message_content):
 def delegate(event, session_attrs):
     session_attrs = _preserve(event, session_attrs)
     response = {'sessionState': {'dialogAction': {'type': 'Delegate'}, 'intent': event['sessionState']['intent'], 'sessionAttributes': session_attrs}}
+    print(f"RESPONSE to Lex: {json.dumps(response)}")
+    return response
+def elicit_intent(event, session_attrs, message_content):
+    """Ask a free-text question without a Lex slot — the customer's next message
+    comes back as the answer (captured at the top of lambda_handler). Mirrors
+    the confirmation->allergy hand-off, which uses the same ElicitIntent shape."""
+    session_attrs = _preserve(event, session_attrs)
+    response = {'sessionState': {'dialogAction': {'type': 'ElicitIntent'}, 'sessionAttributes': session_attrs}, 'messages': [{'contentType': 'PlainText', 'content': message_content}]}
     print(f"RESPONSE to Lex: {json.dumps(response)}")
     return response
 def close_dialog(event, session_attrs, fulfillment_state, message):

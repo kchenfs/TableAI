@@ -86,7 +86,7 @@ def test_out_of_range_quantity_fails_closed():
         resolve_and_price(
             [{"item_name": "green dragon roll", "quantity": 0, "options": {}}], MENU)
 
-from ordering import new_order_id, build_dinein_order, build_takeout_order
+from ordering import new_order_id, build_dinein_order, build_takeout_order, sanitize_customer_name
 
 def test_new_order_id_format():
     oid = new_order_id("TKOT")
@@ -118,6 +118,30 @@ def test_build_takeout_order_shape():
     assert o["paymentStatus"] == "UNPAID"
     assert o["total"] == 13.56
     assert "tableId" not in o
+    assert "customerName" not in o          # absent-means-unset when no name given
+
+
+def test_build_takeout_order_includes_customer_name_when_given():
+    o = build_takeout_order("TKOT-ABCDE", [], 1356, "", customer_name="Ken")
+    assert o["customerName"] == "Ken"
+
+
+def test_build_takeout_order_omits_empty_customer_name():
+    # A falsy name (None or "") must not be stored — keeps the Stripe fallback
+    # able to fire downstream.
+    assert "customerName" not in build_takeout_order("TKOT-A", [], 1356, "", customer_name=None)
+    assert "customerName" not in build_takeout_order("TKOT-B", [], 1356, "", customer_name="")
+
+
+def test_sanitize_customer_name():
+    assert sanitize_customer_name("Ken") == "Ken"
+    assert sanitize_customer_name(None) is None
+    assert sanitize_customer_name("") is None
+    assert sanitize_customer_name("   \t ") is None
+    assert sanitize_customer_name("  Ken   Chen \n") == "Ken Chen"
+    assert sanitize_customer_name("Ke\x07n\x00\x1b") == "Ken"
+    assert sanitize_customer_name("A" * 200) == "A" * 40
+    assert sanitize_customer_name(12345) == "12345"
 
 # --- per-channel pricing -------------------------------------------------
 

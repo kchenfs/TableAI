@@ -61,7 +61,7 @@ def test_takeout_writes_decimal_and_returns_url(monkeypatch):
                         lambda *a, **k: "https://checkout.stripe.com/c/pay/cs_test_x")
     monkeypatch.setattr(app, "_stripe_key", lambda: "rk_live_dummy")
 
-    resp = app.fulfill_order(_order_event("takeout"))
+    resp = app.fulfill_order(_order_event("takeout", {"pickupName": "Ken"}))
 
     # Stripe URL returned to the customer
     assert "checkout.stripe.com" in resp["messages"][0]["content"]
@@ -115,6 +115,60 @@ def test_idempotency_short_circuits(monkeypatch):
     assert resp["sessionState"]["dialogAction"]["type"] == "Close"
 
 
+def test_takeout_without_name_elicits_it_before_paying(monkeypatch):
+    import app
+    monkeypatch.setattr(app, "get_menu", lambda *a, **k: (None, FAKE_MENU_LOOKUP, None))
+    monkeypatch.setattr(app, "orders_table", MagicMock())
+    monkeypatch.setattr(app, "create_checkout_session",
+                        lambda *a, **k: "https://checkout.stripe.com/c/pay/cs_test_x")
+    monkeypatch.setattr(app, "_stripe_key", lambda: "rk_live_dummy")
+
+    resp = app.fulfill_order(_order_event("takeout"))  # no pickupName
+
+    # We ask for the name and do NOT take payment or write the order yet.
+    assert resp["sessionState"]["dialogAction"]["type"] == "ElicitIntent"
+    assert "name" in resp["messages"][0]["content"].lower()
+    assert resp["sessionState"]["sessionAttributes"]["awaitingPickupName"] == "true"
+    assert not app.orders_table.put_item.called
+
+
+def test_takeout_with_name_stores_it_and_names_it_in_the_message(monkeypatch):
+    import app
+    monkeypatch.setattr(app, "get_menu", lambda *a, **k: (None, FAKE_MENU_LOOKUP, None))
+    monkeypatch.setattr(app, "orders_table", MagicMock())
+    monkeypatch.setattr(app, "create_checkout_session",
+                        lambda *a, **k: "https://checkout.stripe.com/c/pay/cs_test_x")
+    monkeypatch.setattr(app, "_stripe_key", lambda: "rk_live_dummy")
+
+    resp = app.fulfill_order(_order_event("takeout", {"pickupName": "Ken"}))
+
+    item = app.orders_table.put_item.call_args.kwargs["Item"]
+    assert item["customerName"] == "Ken"
+    assert "Ken" in resp["messages"][0]["content"]
+    assert resp["sessionState"]["sessionAttributes"]["orderPlaced"] == "true"
+
+
+def test_awaiting_name_turn_captures_free_text_and_fulfills(monkeypatch):
+    import app
+    monkeypatch.setattr(app, "get_menu", lambda *a, **k: (None, FAKE_MENU_LOOKUP, None))
+    monkeypatch.setattr(app, "orders_table", MagicMock())
+    monkeypatch.setattr(app, "create_checkout_session",
+                        lambda *a, **k: "https://checkout.stripe.com/c/pay/cs_test_x")
+    monkeypatch.setattr(app, "_stripe_key", lambda: "rk_live_dummy")
+
+    event = _order_event("takeout", {"awaitingPickupName": "true"})
+    event["sessionState"]["intent"]["name"] = "FallbackIntent"
+    event["inputTranscript"] = "  Ken  "
+
+    resp = app.lambda_handler(event, None)
+
+    item = app.orders_table.put_item.call_args.kwargs["Item"]
+    assert item["customerName"] == "Ken"                       # sanitized + captured
+    attrs = resp["sessionState"]["sessionAttributes"]
+    assert "awaitingPickupName" not in attrs                   # flag cleared
+    assert attrs["orderPlaced"] == "true"
+
+
 def test_takeout_success_url_includes_order_id(monkeypatch):
     import app
     monkeypatch.setattr(app, "get_menu", lambda *a, **k: (None, FAKE_MENU_LOOKUP, None))
@@ -129,7 +183,7 @@ def test_takeout_success_url_includes_order_id(monkeypatch):
         return "https://checkout.stripe.com/c/pay/cs_test_x"
     monkeypatch.setattr(app, "create_checkout_session", _fake_create_checkout_session)
 
-    app.fulfill_order(_order_event("takeout"))
+    app.fulfill_order(_order_event("takeout", {"pickupName": "Ken"}))
 
     assert captured["order_id"] in captured["success_url"]
     assert captured["success_url"].startswith(app.STRIPE_SUCCESS_URL)
